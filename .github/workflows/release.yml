@@ -81,13 +81,13 @@ jobs:
         id: update_readme
         run: |
           CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
-          
+
           git checkout main
           git pull origin main
-          
-          # Update version in README.md (looking for pattern opencode-antigravity-auth@x.y.z)
-          sed -i "s/opencode-antigravity-auth@[0-9]\+\.[0-9]\+\.[0-9]\+/opencode-antigravity-auth@$CURRENT_VERSION/g" README.md
-          
+
+          # Update version in README.md (looking for pattern opencode-antigravity-auth-remix@x.y.z)
+          sed -i "s/opencode-antigravity-auth-remix@[0-9]\+\.[0-9]\+\.[0-9]\+/opencode-antigravity-auth-remix@$CURRENT_VERSION/g" README.md
+
           if ! git diff --quiet README.md; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -98,7 +98,7 @@ jobs:
           else
             echo "README already up to date"
           fi
-          
+
           # Create and push tag on the current HEAD
           git tag "v$CURRENT_VERSION"
           git push origin "v$CURRENT_VERSION"
@@ -156,7 +156,7 @@ jobs:
             echo ""
             printf '%s\n' '```json'
             printf '%s\n' '{'
-            printf '%s\n' "  \"plugins\": [\"opencode-antigravity-auth@${CURRENT_VERSION}\"]"
+            printf '%s\n' "  \"plugins\": [\"opencode-antigravity-auth-remix@${CURRENT_VERSION}\"]"
             printf '%s\n' '}'
             printf '%s\n' '```'
             echo ""
