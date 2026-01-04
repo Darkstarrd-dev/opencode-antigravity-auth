@@ -18,7 +18,10 @@ export interface NonOAuthAuthDetails {
   [key: string]: unknown;
 }
 
-export type AuthDetails = OAuthAuthDetails | ApiKeyAuthDetails | NonOAuthAuthDetails;
+export type AuthDetails =
+  | OAuthAuthDetails
+  | ApiKeyAuthDetails
+  | NonOAuthAuthDetails;
 
 export type GetAuth = () => Promise<AuthDetails>;
 
@@ -79,7 +82,9 @@ export interface AuthMethod {
   label: string;
   type: "oauth" | "api";
   prompts?: AuthPrompt[];
-  authorize?: (inputs?: Record<string, string>) => Promise<OAuthAuthorizationResult>;
+  authorize?: (
+    inputs?: Record<string, string>,
+  ) => Promise<OAuthAuthorizationResult>;
 }
 
 export interface PluginEventPayload {
@@ -92,10 +97,14 @@ export interface PluginEventPayload {
 export interface PluginResult {
   auth: {
     provider: string;
-    loader: (getAuth: GetAuth, provider: Provider) => Promise<LoaderResult | Record<string, unknown>>;
+    loader: (
+      getAuth: GetAuth,
+      provider: Provider,
+    ) => Promise<LoaderResult | Record<string, unknown>>;
     methods: AuthMethod[];
   };
   event?: (payload: PluginEventPayload) => void;
+  tool?: Record<string, unknown>;
 }
 
 export interface RefreshParts {
@@ -108,4 +117,3 @@ export interface ProjectContextResult {
   auth: OAuthAuthDetails;
   effectiveProjectId: string;
 }
-

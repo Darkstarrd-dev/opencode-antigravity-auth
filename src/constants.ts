@@ -1,7 +1,8 @@
 /**
  * Constants used for Antigravity OAuth flows and Cloud Code Assist API integration.
  */
-export const ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+export const ANTIGRAVITY_CLIENT_ID =
+  "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
 
 /**
  * Client secret issued for the Antigravity OAuth application.
@@ -29,8 +30,10 @@ export const ANTIGRAVITY_REDIRECT_URI = "http://localhost:51121/oauth-callback";
  * CLIProxy and Vibeproxy use the daily sandbox endpoint first,
  * then fallback to autopush and prod if needed.
  */
-export const ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
-export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
+export const ANTIGRAVITY_ENDPOINT_DAILY =
+  "https://daily-cloudcode-pa.sandbox.googleapis.com";
+export const ANTIGRAVITY_ENDPOINT_AUTOPUSH =
+  "https://autopush-cloudcode-pa.sandbox.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 
 /**
@@ -73,13 +76,15 @@ export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 export const ANTIGRAVITY_HEADERS = {
   "User-Agent": "antigravity/1.11.5 windows/amd64",
   "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  "Client-Metadata": '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
+  "Client-Metadata":
+    '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
 } as const;
 
 export const GEMINI_CLI_HEADERS = {
   "User-Agent": "google-api-nodejs-client/9.15.1",
   "X-Goog-Api-Client": "gl-node/22.17.0",
-  "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
+  "Client-Metadata":
+    "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 } as const;
 
 export type HeaderStyle = "antigravity" | "gemini-cli";
@@ -91,12 +96,12 @@ export const ANTIGRAVITY_PROVIDER_ID = "google";
 
 /**
  * Whether to preserve thinking blocks for Claude models.
- * 
+ *
  * This value is now controlled via config (see plugin/config/schema.ts).
  * The default is false for reliability. Set to true via:
  * - Config file: { "keep_thinking": true }
  * - Env var: OPENCODE_ANTIGRAVITY_KEEP_THINKING=1
- * 
+ *
  * @deprecated Use config.keep_thinking from loadConfig() instead.
  *             This export is kept for backward compatibility but reads from env.
  */
@@ -111,7 +116,7 @@ export const KEEP_THINKING_BLOCKS =
 /**
  * System instruction for Claude tool usage hardening.
  * Prevents hallucinated parameters by explicitly stating the rules.
- * 
+ *
  * This is injected when tools are present to reduce cases where Claude
  * uses parameter names from its training data instead of the actual schema.
  */
@@ -135,5 +140,29 @@ If you are unsure about a tool's parameters, YOU MUST read the schema definition
 export const CLAUDE_DESCRIPTION_PROMPT = "\n\n⚠️ STRICT PARAMETERS: {params}.";
 
 export const EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder";
-export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true.";
+export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION =
+  "Placeholder. Always pass true.";
 
+// ============================================================================
+// SEARCH TOOL CONSTANTS
+// ============================================================================
+
+/**
+ * Model used for Google Search tool execution.
+ */
+export const SEARCH_MODEL = "gemini-2.5-flash";
+
+/**
+ * Token budget for fast search (default when thinking=false).
+ */
+export const SEARCH_THINKING_BUDGET_FAST = 4096;
+
+/**
+ * Token budget for deep search (default when thinking=true).
+ */
+export const SEARCH_THINKING_BUDGET_DEEP = 16384;
+
+/**
+ * Timeout for search requests in milliseconds (60 seconds).
+ */
+export const SEARCH_TIMEOUT_MS = 60 * 1000;
