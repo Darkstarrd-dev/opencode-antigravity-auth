@@ -1,6 +1,6 @@
 {
   "name": "opencode-antigravity-auth-remix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Enhanced fork: Antigravity + Gemini CLI OAuth + google_search tool for Opencode",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
