@@ -183,7 +183,7 @@ jobs:
           tag_name: v${{ steps.determine.outputs.current_version }}
           release_name: v${{ steps.determine.outputs.current_version }}
           body: ${{ steps.release_notes.outputs.body }}
-          generate_release_notes: false
+          # Removed unsupported generate_release_notes
 
       - name: Publish to npm
         if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
