@@ -35,7 +35,7 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 Paste this into any LLM agent (Claude Code, OpenCode, Cursor, etc.):
 
 ```
-Install the opencode-antigravity-auth plugin and add the Antigravity model definitions to ~/.config/opencode/opencode.json by following: https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/README.md
+Install the opencode-antigravity-auth plugin and add the Antigravity model definitions to ~/.config/opencode/opencode.json by following: https://raw.githubusercontent.com/Darkstarrd-dev/opencode-antigravity-auth/main/README.md
 ```
 
 **Option B: Manual setup**
@@ -44,7 +44,7 @@ Install the opencode-antigravity-auth plugin and add the Antigravity model defin
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth@1.2.7"]
+     "plugin": ["opencode-antigravity-auth-remix@1.0.0"]
    }
    ```
 
@@ -58,7 +58,7 @@ Install the opencode-antigravity-auth plugin and add the Antigravity model defin
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth@1.2.7"],
+     "plugin": ["opencode-antigravity-auth-remix@1.0.0"],
      "provider": {
        "google": {
          "models": {
@@ -102,7 +102,7 @@ Create `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth@1.2.7"],
+  "plugin": ["opencode-antigravity-auth-remix@1.0.0"],
   "provider": {
     "google": {
       "models": {
@@ -262,7 +262,7 @@ Models with `-preview` suffix use Gemini CLI quota:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth@1.2.7"],
+  "plugin": ["opencode-antigravity-auth-remix@1.0.0"],
   "provider": {
     "google": {
       "models": {
@@ -513,7 +513,7 @@ OPENCODE_ANTIGRAVITY_KEEP_THINKING=1 # keep_thinking
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Darkstarrd-dev/opencode-antigravity-auth/main/assets/antigravity.schema.json",
   "quiet_mode": false,
   "debug": false,
   "log_dir": "/custom/log/path",
@@ -633,7 +633,7 @@ Models now use `antigravity-` prefix for Antigravity quota. See [Available Model
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Darkstarrd-dev/opencode-antigravity-auth/main/assets/antigravity.schema.json",
   "quiet_mode": false,
   "debug": false
 }
