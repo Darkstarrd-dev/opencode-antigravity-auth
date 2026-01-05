@@ -19,6 +19,7 @@ import {
 } from "./plugin/cli";
 import { ensureProjectContext } from "./plugin/project";
 import { executeSearch } from "./plugin/search";
+import { executeImageGeneration } from "./plugin/image";
 import {
   startAntigravityDebugRequest,
   logAntigravityDebugResponse,
@@ -182,6 +183,69 @@ function createGoogleSearchTool(
         },
         authContext.accessToken,
         authContext.projectId,
+        ctx.abort,
+      );
+    },
+  });
+}
+
+/**
+ * Creates the Image Generation tool for generating images from text descriptions.
+ */
+function createImageGenerateTool(
+  getAuth: GetAuth,
+  client: PluginContext["client"],
+  directory: string,
+) {
+  return tool({
+    description:
+      "Generate images from text descriptions using Gemini's image generation model. " +
+      "Use this tool when the user explicitly asks to generate, create, draw, or make an image, picture, illustration, chart, diagram, or artwork. " +
+      "Examples of triggers: '生成一张xxx的图片', '画一张xxx', '做一个xxx的图表', '创建xxx的插图', 'generate an image of...', 'draw a picture of...', 'create an illustration of...'. " +
+      "Images are automatically saved to the imgs/ directory in the workspace.",
+    args: {
+      prompt: tool.schema
+        .string()
+        .describe(
+          "Detailed description of the image to generate. Be specific about style, composition, colors, and content.",
+        ),
+      aspect_ratio: tool.schema
+        .string()
+        .optional()
+        .default("1:1")
+        .describe(
+          "Aspect ratio of the image. Supported values: '1:1' (square), '16:9' (landscape/widescreen), '9:16' (portrait/vertical), '4:3', '3:4', '21:9' (ultrawide). Aliases: 'square', 'landscape', 'portrait', 'wide'.",
+        ),
+      quality: tool.schema
+        .string()
+        .optional()
+        .default("standard")
+        .describe(
+          "Image quality: 'standard' for normal resolution, 'hd' for 4K high-resolution output.",
+        ),
+    },
+    async execute(args, ctx) {
+      log.debug("Image Generation tool called", {
+        promptLength: args.prompt?.length ?? 0,
+        aspectRatio: args.aspect_ratio,
+        quality: args.quality,
+        directory,
+      });
+
+      const authContext = await getAuthContext(getAuth, client);
+      if (!authContext) {
+        return "Error: Not authenticated with Antigravity. Please run `opencode auth login` to authenticate.";
+      }
+
+      return executeImageGeneration(
+        {
+          prompt: args.prompt,
+          aspect_ratio: args.aspect_ratio,
+          quality: args.quality,
+        },
+        authContext.accessToken,
+        authContext.projectId,
+        directory,
         ctx.abort,
       );
     },
@@ -2538,6 +2602,12 @@ export const createAntigravityPlugin =
           }
           return cachedGetAuth();
         }, client),
+        generate_image: createImageGenerateTool(() => {
+          if (!cachedGetAuth) {
+            throw new Error("Auth not initialized");
+          }
+          return cachedGetAuth();
+        }, client, directory),
       },
     };
   };

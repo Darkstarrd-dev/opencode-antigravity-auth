@@ -166,3 +166,48 @@ export const SEARCH_THINKING_BUDGET_DEEP = 16384;
  * Timeout for search requests in milliseconds (60 seconds).
  */
 export const SEARCH_TIMEOUT_MS = 60 * 1000;
+
+// ============================================================================
+// IMAGE GENERATION CONSTANTS
+// ============================================================================
+
+/**
+ * Model used for image generation.
+ */
+export const IMAGE_MODEL = "gemini-3-pro-image";
+
+/**
+ * Timeout for image generation requests in milliseconds (120 seconds).
+ * Image generation takes longer than text generation.
+ */
+export const IMAGE_TIMEOUT_MS = 120 * 1000;
+
+/**
+ * Supported aspect ratios for image generation.
+ * Maps user-friendly names and standard formats to API values.
+ */
+export const ASPECT_RATIOS: Record<string, string> = {
+  // Standard formats
+  "1:1": "1:1",
+  "16:9": "16:9",
+  "9:16": "9:16",
+  "4:3": "4:3",
+  "3:4": "3:4",
+  "21:9": "21:9",
+  // Aliases
+  square: "1:1",
+  landscape: "16:9",
+  portrait: "9:16",
+  wide: "21:9",
+};
+
+/**
+ * Safety settings with all categories disabled.
+ * Used for image generation to avoid content filtering.
+ */
+export const SAFETY_SETTINGS_OFF = [
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+] as const;
