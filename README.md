@@ -24,7 +24,8 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 - **Extended Thinking** - Native support for Claude thinking budgets and Gemini 3 thinking levels
 - **Auto Recovery** - Automatic session recovery from Claude tool_result_missing errors
 - **Plugin Compatible** - Works alongside other OpenCode plugins (opencodesync, etc.)
-- **google_search Tool** - (NEW) Built-in web search and URL analysis powered by Antigravity API
+- **google_search Tool** - Built-in web search and URL analysis powered by Antigravity API
+- **generate_image Tool** - (NEW) AI image generation with auto-save and WebP conversion
 
 ## Installation
 
@@ -44,7 +45,7 @@ Install the opencode-antigravity-auth plugin and add the Antigravity model defin
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.0.7"]
+     "plugin": ["opencode-antigravity-auth-remix@1.0.8"]
    }
    ```
 
@@ -58,7 +59,7 @@ Install the opencode-antigravity-auth plugin and add the Antigravity model defin
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.0.7"],
+     "plugin": ["opencode-antigravity-auth-remix@1.0.8"],
      "provider": {
        "google": {
          "models": {
@@ -102,7 +103,7 @@ Create `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.0.7"],
+  "plugin": ["opencode-antigravity-auth-remix@1.0.8"],
   "provider": {
     "google": {
       "models": {
@@ -262,7 +263,7 @@ Models with `-preview` suffix use Gemini CLI quota:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.0.7"],
+  "plugin": ["opencode-antigravity-auth-remix@1.0.8"],
   "provider": {
     "google": {
       "models": {
@@ -664,6 +665,37 @@ npx tsx script/test-regression.ts --dry-run
 ```
 
 </details>
+
+## Built-in Tools
+
+### google_search
+
+Web search and URL analysis powered by Antigravity API.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | Search query |
+| `urls` | string[] | No | URLs to analyze |
+| `thinking` | boolean | Yes | Enable thinking mode |
+
+### generate_image
+
+AI image generation with automatic file saving and WebP conversion.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `prompt` | string | Yes | - | Image description |
+| `aspect_ratio` | string | No | "1:1" | Aspect ratio |
+| `quality` | string | No | "standard" | Image quality |
+
+**Supported aspect ratios:** `1:1` (square), `16:9` (landscape), `9:16` (portrait), `4:3`, `3:4`, `21:9` (wide)
+
+**Features:**
+- Auto-saves to `{project}/imgs/` directory
+- Generates WebP version (75% quality) alongside original
+- Logs all requests to `imgs/list.md`
+
+**Trigger phrases:** "generate an image of...", "draw a picture of...", "create an illustration of..."
 
 ## Debugging
 
