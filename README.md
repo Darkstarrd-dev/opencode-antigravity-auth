@@ -46,7 +46,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.0.9"]
+     "plugin": ["opencode-antigravity-auth-remix@1.1.0"]
    }
    ```
 
@@ -60,7 +60,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.0.9"],
+     "plugin": ["opencode-antigravity-auth-remix@1.1.0"],
      "provider": {
        "google": {
          "models": {
