@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Google Cloud Support
+    url: https://cloud.google.com/support
+    about: For Google Cloud account or billing issues, contact Google Cloud directly
+  - name: Google Terms of Service
+    url: https://policies.google.com/terms
+    about: Review Google's Terms of Service for compliance questions
+  - name: Discussions
+    url: https://github.com/NoeFabris/opencode-antigravity-auth/discussions
+    about: Ask questions or discuss the plugin with the community
