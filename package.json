@@ -1,6 +1,6 @@
 {
     "name": "opencode-antigravity-auth-remix",
-    "version": "1.0.9",
+    "version": "1.1.0",
     "description": "Remix of Antigravity Auth: Dual Account + Google Search (WIP) + Image Generation",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",

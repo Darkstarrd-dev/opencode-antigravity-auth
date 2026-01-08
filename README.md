@@ -10,7 +10,7 @@
 > | `google_search` Tool (Experimental)                                            | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
 > | `generate_image` Tool (Native Implementation)                                  | Ported from Antigravity Manager logic                                                                    |
 >
-> **Status:** Version 1.0.9 - Stable Image Gen, Dual Channel (CLI/Anti), Search Tool (WIP/Disabled)
+> **Status:** Version 1.1.0 - Stable Image Gen, Dual Channel (CLI/Anti), Search Tool (WIP/Disabled)
 
 ---
 
