@@ -25,6 +25,7 @@ interface GroundingSupport {
     text?: string;
   };
   groundingChunkIndices?: number[];
+  confidenceScore?: number;
 }
 
 interface GroundingMetadata {
@@ -80,6 +81,7 @@ export interface SearchArgs {
 export interface SearchResult {
   text: string;
   sources: Array<{ title: string; url: string }>;
+  citations: Array<{ text: string; sourceTitle: string; sourceUrl: string }>;
   searchQueries: string[];
   urlsRetrieved: Array<{ url: string; status: string }>;
 }
@@ -90,6 +92,15 @@ function formatSearchResult(result: SearchResult): string {
   lines.push("## Search Results\n");
   lines.push(result.text);
   lines.push("");
+
+  if (result.citations.length > 0) {
+    lines.push("### Citations");
+    for (let i = 0; i < result.citations.length; i++) {
+      const citation = result.citations[i]!;
+      lines.push(`[${i + 1}] ${citation.text} — [${citation.sourceTitle}](${citation.sourceUrl})`);
+    }
+    lines.push("");
+  }
 
   if (result.sources.length > 0) {
     lines.push("### Sources");
@@ -122,6 +133,7 @@ function parseSearchResponse(data: AntigravitySearchResponse): SearchResult {
   const result: SearchResult = {
     text: "",
     sources: [],
+    citations: [],
     searchQueries: [],
     urlsRetrieved: [],
   };
@@ -155,13 +167,31 @@ function parseSearchResponse(data: AntigravitySearchResponse): SearchResult {
       result.searchQueries = gm.webSearchQueries;
     }
 
-    if (gm.groundingChunks) {
-      for (const chunk of gm.groundingChunks) {
+    const chunks = gm.groundingChunks || [];
+    if (chunks.length > 0) {
+      for (const chunk of chunks) {
         if (chunk.web?.uri && chunk.web?.title) {
           result.sources.push({
             title: chunk.web.title,
             url: chunk.web.uri,
           });
+        }
+      }
+    }
+
+    // Parse citations from groundingSupports
+    if (gm.groundingSupports && gm.groundingSupports.length > 0) {
+      for (const support of gm.groundingSupports) {
+        if (support.segment?.text && support.groundingChunkIndices && support.groundingChunkIndices.length > 0) {
+          const firstIndex = support.groundingChunkIndices[0]!;
+          const chunk = chunks[firstIndex];
+          if (chunk?.web?.uri && chunk?.web?.title) {
+            result.citations.push({
+              text: support.segment.text,
+              sourceTitle: chunk.web.title,
+              sourceUrl: chunk.web.uri,
+            });
+          }
         }
       }
     }
@@ -215,7 +245,9 @@ export async function executeSearch(
     tools.push({ urlContext: {} });
   }
 
-  const thinkingBudget = thinking ? SEARCH_THINKING_BUDGET_DEEP : SEARCH_THINKING_BUDGET_FAST;
+  const thinkingBudget = thinking 
+    ? Math.min(SEARCH_THINKING_BUDGET_DEEP, 24576) 
+    : SEARCH_THINKING_BUDGET_FAST;
 
   const requestPayload = {
     systemInstruction: {
@@ -229,6 +261,7 @@ export async function executeSearch(
     ],
     tools,
     generationConfig: {
+      candidateCount: 1,
       thinkingConfig: {
         thinkingBudget,
         includeThoughts: false,
@@ -241,6 +274,7 @@ export async function executeSearch(
     model: SEARCH_MODEL,
     userAgent: "antigravity",
     requestId: generateRequestId(),
+    requestType: "web_search",
     request: {
       ...requestPayload,
       sessionId: getSessionId(),

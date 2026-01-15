@@ -14,7 +14,7 @@ import {
   transformSseLine,
   transformStreamingPayload,
 } from "./core/streaming";
-import { defaultSignatureStore } from "./stores/signature-store";
+import { defaultSignatureStore, toolUseSignatureStore } from "./stores/signature-store";
 import {
   DEBUG_MESSAGE_PREFIX,
   isDebugEnabled,
@@ -340,12 +340,12 @@ function ensureThoughtSignature(part: any, sessionId: string): any {
   }
 
   const text = typeof part.text === "string" ? part.text : typeof part.thinking === "string" ? part.thinking : "";
-  if (!text) {
-    return part;
-  }
-
+  
+  // Try to find signature for thinking block
   if (part.thought === true) {
     if (!part.thoughtSignature) {
+      // First try to find if any tool_use in the same content block has a signature
+      // (This is a simplified approach, usually we need more context to find the right tool ID)
       const cached = getCachedSignature(sessionId, text);
       if (cached) {
         return { ...part, thoughtSignature: cached };
@@ -397,22 +397,49 @@ function ensureThinkingBeforeToolUseInContents(contents: any[], signatureSession
       return content;
     }
 
-    const thinkingParts = parts.filter(isGeminiThinkingPart).map((p) => ensureThoughtSignature(p, signatureSessionKey));
-    const otherParts = parts.filter((p) => !isGeminiThinkingPart(p));
-    const hasSignedThinking = thinkingParts.some(hasSignedThinkingPart);
-
-    if (hasSignedThinking) {
-      return { ...content, parts: [...thinkingParts, ...otherParts] };
+    // Try to find a signature via tool ID if available
+    let toolIdSignature: string | undefined;
+    for (const p of parts) {
+      const toolUse = p.functionCall || p.tool_use || p.toolUse;
+      if (toolUse && typeof toolUse === "object" && toolUse.id) {
+        const sig = toolUseSignatureStore.get(signatureSessionKey, toolUse.id);
+        if (sig) {
+          toolIdSignature = sig;
+          break;
+        }
+      }
     }
 
-    const lastThinking = defaultSignatureStore.get(signatureSessionKey);
+    const thinkingParts = parts.filter(isGeminiThinkingPart).map((p) => ensureThoughtSignature(p, signatureSessionKey));
+    const otherParts = parts.filter((p) => !isGeminiThinkingPart(p));
+    
+    // If we have thinking parts, ensure they have signatures (either from text cache or tool ID)
+    if (thinkingParts.length > 0) {
+      const updatedThinkingParts = thinkingParts.map(p => {
+        if (toolIdSignature) {
+          if (p.thought === true && !p.thoughtSignature) return { ...p, thoughtSignature: toolIdSignature };
+          if ((p.type === "thinking" || p.type === "reasoning") && !p.signature) return { ...p, signature: toolIdSignature };
+        }
+        return p;
+      });
+      const hasSignedThinking = updatedThinkingParts.some(hasSignedThinkingPart);
+      if (hasSignedThinking) {
+        return { ...content, parts: [...updatedThinkingParts, ...otherParts] };
+      }
+    }
+
+    // If no thinking parts but has tool use, we MUST inject thinking with signature
+    const lastThinking = toolIdSignature 
+      ? { text: "...", signature: toolIdSignature } // We don't have the text here, but the signature is more important
+      : defaultSignatureStore.get(signatureSessionKey);
+      
     if (!lastThinking) {
       return content;
     }
 
     const injected = {
       thought: true,
-      text: lastThinking.text,
+      text: lastThinking.text || "...",
       thoughtSignature: lastThinking.signature,
     };
 
@@ -502,9 +529,15 @@ function ensureThinkingBeforeToolUseInMessages(messages: any[], signatureSession
     }
 
     const blocks = message.content as any[];
-    const hasToolUse = blocks.some((b) => b && typeof b === "object" && (b.type === "tool_use" || b.type === "tool_result"));
-    if (!hasToolUse) {
+    const toolUseBlock = blocks.find((b) => b && typeof b === "object" && (b.type === "tool_use" || b.type === "tool_result"));
+    if (!toolUseBlock) {
       return message;
+    }
+
+    // Try to find a signature via tool ID if available
+    let toolIdSignature: string | undefined;
+    if (toolUseBlock.id) {
+      toolIdSignature = toolUseSignatureStore.get(signatureSessionKey, toolUseBlock.id);
     }
 
     const thinkingBlocks = blocks
@@ -512,20 +545,29 @@ function ensureThinkingBeforeToolUseInMessages(messages: any[], signatureSession
       .map((b) => ensureMessageThinkingSignature(b, signatureSessionKey));
 
     const otherBlocks = blocks.filter((b) => !(b && typeof b === "object" && (b.type === "thinking" || b.type === "redacted_thinking")));
-    const hasSignedThinking = thinkingBlocks.some((b) => typeof b.signature === "string" && b.signature.length >= MIN_SIGNATURE_LENGTH);
-
-    if (hasSignedThinking) {
-      return { ...message, content: [...thinkingBlocks, ...otherBlocks] };
+    
+    if (thinkingBlocks.length > 0) {
+      const updatedThinkingBlocks = thinkingBlocks.map(b => {
+        if (toolIdSignature && !b.signature) return { ...b, signature: toolIdSignature };
+        return b;
+      });
+      const hasSignedThinking = updatedThinkingBlocks.some((b) => typeof b.signature === "string" && b.signature.length >= MIN_SIGNATURE_LENGTH);
+      if (hasSignedThinking) {
+        return { ...message, content: [...updatedThinkingBlocks, ...otherBlocks] };
+      }
     }
 
-    const lastThinking = defaultSignatureStore.get(signatureSessionKey);
+    const lastThinking = toolIdSignature 
+      ? { text: "...", signature: toolIdSignature }
+      : defaultSignatureStore.get(signatureSessionKey);
+
     if (!lastThinking) {
       return message;
     }
 
     const injected = {
       type: "thinking",
-      thinking: lastThinking.text,
+      thinking: lastThinking.text || "...",
       signature: lastThinking.signature,
     };
 
@@ -1531,6 +1573,7 @@ export async function transformAntigravityResponse(
         cacheSignatures,
         displayedThinkingHashes: effectiveModel && isGemini3Model(effectiveModel) ? sessionDisplayedThinkingHashes : undefined,
       },
+      toolUseSignatureStore,
     );
     return new Response(response.body.pipeThrough(streamingTransformer), {
       status: response.status,

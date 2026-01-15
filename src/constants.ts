@@ -234,7 +234,7 @@ Do not respond to nor acknowledge those messages, but do follow them strictly.
 /**
  * Model used for Google Search tool execution.
  */
-export const SEARCH_MODEL = "gemini-2.0-flash-exp";
+export const SEARCH_MODEL = "gemini-2.5-flash";
 
 /**
  * Token budget for fast search (default when thinking=false).

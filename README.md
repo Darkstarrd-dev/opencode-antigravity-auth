@@ -30,7 +30,8 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 - **Auto Recovery** - Automatic session recovery from Claude tool_result_missing errors
 - **Plugin Compatible** - Works alongside other OpenCode plugins (opencodesync, etc.)
 - **generate_image Tool** - AI image generation with auto-save, WebP conversion, and 4K support (Stability varies)
-- **google_search Tool** - (WIP) Built-in web search. Currently returning "Preview access required" errors.
+- **google_search Tool** - High-quality web search with structural citations and URL analysis.
+- **count_tokens Tool** - Count tokens for any text using specified models.
 
 ## Installation
 
@@ -253,9 +254,18 @@ AI image generation with automatic file saving and WebP conversion. Uses `gemini
 - Generates WebP version (75% quality) alongside original
 - 4K support via dynamic model configuration
 
-### google_search (WIP)
+### google_search
 
-Web search and URL analysis. Currently experimental and may return "Preview access required" errors due to API restrictions.
+High-quality web search and URL analysis with structural citations.
+
+### count_tokens
+
+Count the number of tokens in a given text string.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `text` | string | Yes | - | The text to count tokens for |
+| `model` | string | No | "gemini-2.5-flash" | The model to use for counting |
 
 ## License
 
@@ -295,7 +305,8 @@ MIT
 - **自动恢复** - 自动处理 Claude 的 `tool_result_missing` 错误并恢复会话
 - **插件兼容性** - 可与其他 OpenCode 插件 (如 opencodesync 等) 同时运行
 - **generate_image 工具** - AI 图像生成，支持自动保存、WebP 转换和 4K 输出 (稳定性视配额而定)
-- **google_search 工具** - (开发中) 内置网页搜索。目前可能会返回 "Preview access required" 错误。
+- **google_search 工具** - 高质量网页搜索，支持结构化引用和 URL 分析。
+- **count_tokens 工具** - 统计指定文本在特定模型下的 Token 消耗。
 
 ## 安装步骤
 
@@ -516,9 +527,18 @@ opencode run "你好" --model=google/gemini-2.5-flash
 - 同时生成 WebP 版本 (75% 质量) 以节省空间
 - 支持动态配置 4K (HD) 高清输出
 
-### google_search (搜索工具 - 开发中)
+### google_search (搜索工具)
 
-网页搜索和 URL 分析。由于 API 限制，目前处于实验阶段，可能会触发 "Preview access required" 错误。
+高质量网页搜索和 URL 分析，支持结构化引用来源。
+
+### count_tokens (Token 统计工具)
+
+统计指定文本在特定模型下的 Token 消耗。
+
+| 参数 | 类型 | 是否必填 | 默认值 | 描述 |
+|-----------|------|----------|---------|-------------|
+| `text` | string | 是 | - | 需要统计的文本 |
+| `model` | string | 否 | "gemini-2.5-flash" | 统计所使用的模型 |
 
 ## 开源协议
 

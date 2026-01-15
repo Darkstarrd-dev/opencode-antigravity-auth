@@ -8,6 +8,7 @@ import { promptAddAnotherAccount, promptLoginMode, promptProjectId } from "./plu
 import { ensureProjectContext } from "./plugin/project";
 import { executeSearch } from "./plugin/search";
 import { executeImageGeneration } from "./plugin/image";
+import { executeCountTokens } from "./plugin/count-tokens";
 import {
   startAntigravityDebugRequest, 
   logAntigravityDebugResponse,
@@ -815,6 +816,40 @@ function createImageGenerateTool(
         authContext.projectId,
         directory,
         ctx.abort,
+      );
+    },
+  });
+}
+
+/**
+ * Creates the Count Tokens tool for counting tokens in a given text.
+ */
+function createCountTokensTool(
+  getAuth: GetAuth,
+  client: PluginContext["client"],
+) {
+  return tool({
+    description: "Count the number of tokens in a given text string for a specific model.",
+    args: {
+      text: tool.schema.string().describe("The text to count tokens for"),
+      model: tool.schema.string().optional().describe("The model to use for token counting (defaults to gemini-2.5-flash)"),
+    },
+    async execute(args, ctx) {
+      const authContext = await getAuthContext(getAuth, client);
+      if (!authContext) {
+        return "Error: Not authenticated with Antigravity. Please run `opencode auth login` to authenticate.";
+      }
+
+      const { ANTIGRAVITY_ENDPOINT_DAILY } = await import("./constants");
+
+      return executeCountTokens(
+        {
+          text: args.text,
+          model: args.model,
+        },
+        authContext.accessToken,
+        authContext.projectId,
+        ANTIGRAVITY_ENDPOINT_DAILY,
       );
     },
   });
@@ -2124,6 +2159,12 @@ export const createAntigravityPlugin = (providerId: string) => async (
   },
   tool: {
     google_search: createGoogleSearchTool(() => {
+      if (!cachedGetAuth) {
+        throw new Error("Auth not initialized");
+      }
+      return cachedGetAuth();
+    }, client),
+    count_tokens: createCountTokensTool(() => {
       if (!cachedGetAuth) {
         throw new Error("Auth not initialized");
       }
