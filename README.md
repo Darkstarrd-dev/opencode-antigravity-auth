@@ -51,7 +51,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.1.1"]
+     "plugin": ["opencode-antigravity-auth-remix@1.2.0"]
    }
    ```
 
@@ -102,7 +102,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.1.1"],
+  "plugin": ["opencode-antigravity-auth-remix@1.2.0"],
   "provider": {
     "google": {
       "models": {
@@ -324,7 +324,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.1.1"]
+     "plugin": ["opencode-antigravity-auth-remix@1.2.0"]
    }
    ```
 
@@ -375,7 +375,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.1.1"],
+  "plugin": ["opencode-antigravity-auth-remix@1.2.0"],
   "provider": {
     "google": {
       "models": {
