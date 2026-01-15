@@ -11,10 +11,12 @@
 > | Feature                                                                        | Source                                                                                                    |
 > | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
-> | `google_search` Tool (Experimental)                                            | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
-> | `generate_image` Tool (Native Implementation)                                  | Ported from Antigravity Manager logic                                                                    |
+> | `google_search` Tool (Enhanced with Citations)                                 | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
+> | `generate_image` Tool (Native Implementation)                                  | Ported from [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) logic                    |
+> | `count_tokens` Tool                                                            | Native Implementation                                                                                     |
+> | `thoughtSignature` logic (Tool-loop recovery)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **Status:** Version 1.1.1 - Fixed `@opencode-ai/plugin` dependency resolution (upgraded to v1.0.182+)
+> **Status:** Version 1.2.0 - Enhanced google_search, added count_tokens, and fixed tool-loop signatures
 
 ---
 
@@ -286,10 +288,12 @@ MIT
 > | 功能                                                                        | 来源                                                                                                    |
 > | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 > | 双配额系统、多账号轮换、会话恢复、思考过程恢复 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
-> | `google_search` 工具 (实验性)                                            | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
-> | `generate_image` 工具 (原生实现)                                  | 移植自 Antigravity Manager 逻辑                                                                    |
+> | `google_search` 工具 (支持结构化引用)                                            | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
+> | `generate_image` 工具 (原生实现)                                  | 移植自 [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) 逻辑                                                                    |
+> | `count_tokens` 工具                                                            | 原生实现                                                                                     |
+> | `thoughtSignature` 逻辑 (工具调用签名恢复)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **状态:** 版本 1.1.1 - 修复了 `@opencode-ai/plugin` 依赖解析问题 (已升级至 v1.0.182+)
+> **状态:** 版本 1.2.0 - 增强了 google_search，新增了 count_tokens，并修复了工具调用签名问题
 
 ---
 
