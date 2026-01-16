@@ -16,7 +16,8 @@ import { createLogger } from "./logger";
 const log = createLogger("image");
 
 // Track the last successfully used endpoint to prioritize it in future requests
-let _preferredEndpoint: string | null = null;
+type AntigravityEndpoint = typeof ANTIGRAVITY_ENDPOINT_FALLBACKS[number];
+let _preferredEndpoint: AntigravityEndpoint | null = null;
 
 /**
  * Arguments for image generation.
@@ -483,7 +484,7 @@ export async function executeImageGeneration(
   let lastError: string | null = null;
 
   // Prioritize the preferred endpoint if set
-  const endpointsToTry = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
+  const endpointsToTry: AntigravityEndpoint[] = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
   if (_preferredEndpoint) {
     const idx = endpointsToTry.indexOf(_preferredEndpoint);
     if (idx > 0) {
