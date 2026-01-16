@@ -792,12 +792,19 @@ function createImageGenerateTool(
         .describe(
           "Image quality: 'standard' for normal resolution, 'hd' for 4K high-resolution output.",
         ),
+      reference_images: tool.schema
+        .array(tool.schema.string())
+        .optional()
+        .describe(
+          "Optional list of absolute file paths to reference images for image-to-image generation. Use this when the user wants to modify or use an existing image as a base.",
+        ),
     },
     async execute(args, ctx) {
       log.debug("Image Generation tool called", {
         promptLength: args.prompt?.length ?? 0,
         aspectRatio: args.aspect_ratio,
         quality: args.quality,
+        referenceImageCount: args.reference_images?.length ?? 0,
         directory,
       });
 
@@ -811,6 +818,7 @@ function createImageGenerateTool(
           prompt: args.prompt,
           aspect_ratio: args.aspect_ratio,
           quality: args.quality,
+          imagePaths: args.reference_images,
         },
         authContext.accessToken,
         authContext.projectId,
