@@ -16,7 +16,7 @@
 > | `count_tokens` Tool                                                            | Native Implementation                                                                                     |
 > | `thoughtSignature` logic (Tool-loop recovery)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **Status:** Version 1.3.1 - Added Image-to-Image (Image Variation) support for `generate_image`.
+> **Status:** Version 1.3.3 - Added Image-to-Image (Image Variation) support for `generate_image`.
 
 ---
 
