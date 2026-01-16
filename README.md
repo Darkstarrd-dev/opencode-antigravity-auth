@@ -259,6 +259,23 @@ AI image generation with automatic file saving and WebP conversion. Uses `gemini
 - **WebP**: Generates optimized WebP version (75% quality) alongside original
 - **4K Support**: High-definition output via dynamic model configuration
 
+#### Image-to-Image Guide
+
+To use Image-to-Image generation, provide the absolute local paths of your reference images in the `imagePaths` parameter.
+
+**Scenario 1: Style Transfer**
+- **Prompt**: "Turn this photo into a cyberpunk style illustration"
+- **imagePaths**: `["/path/to/your/photo.jpg"]`
+
+**Scenario 2: Multi-Image Fusion**
+- **Prompt**: "Combine the cat from the first image and the dog from the second image playing together in a park"
+- **imagePaths**: `["/path/to/cat.jpg", "/path/to/dog.png"]`
+
+**Notes**:
+- Paths must be absolute local file system paths.
+- Supports JPG, PNG, WebP.
+- Maximum 10 reference images.
+
 ### google_search
 
 High-quality web search and URL analysis with structural citations.
@@ -536,6 +553,23 @@ opencode run "你好" --model=google/gemini-2.5-flash
 - **自动保存**: 保存至项目目录下的 `{project}/imgs/`
 - **WebP**: 同时生成 WebP 版本 (75% 质量) 以节省空间
 - **高清支持**: 支持动态配置 4K (HD) 高清输出
+
+#### 图生图 (Image-to-Image) 使用指南
+
+要使用图生图功能，只需在调用工具时通过 `imagePaths` 参数提供参考图片的本地绝对路径。
+
+**示例场景 1：风格迁移**
+- **Prompt**: "Turn this photo into a cyberpunk style illustration"
+- **imagePaths**: `["/path/to/your/photo.jpg"]`
+
+**示例场景 2：多图融合**
+- **Prompt**: "Combine the cat from the first image and the dog from the second image playing together in a park"
+- **imagePaths**: `["/path/to/cat.jpg", "/path/to/dog.png"]`
+
+**注意**:
+- 图片路径必须是本地文件系统的绝对路径。
+- 支持 JPG, PNG, WebP 格式。
+- 最多支持 10 张参考图片。
 
 ### google_search (搜索工具)
 
