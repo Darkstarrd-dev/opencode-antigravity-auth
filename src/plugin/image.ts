@@ -15,6 +15,9 @@ import { createLogger } from "./logger";
 
 const log = createLogger("image");
 
+// Track the last successfully used endpoint to prioritize it in future requests
+let _preferredEndpoint: string | null = null;
+
 /**
  * Arguments for image generation.
  */
@@ -479,8 +482,20 @@ export async function executeImageGeneration(
 
   let lastError: string | null = null;
 
+  // Prioritize the preferred endpoint if set
+  const endpointsToTry = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
+  if (_preferredEndpoint) {
+    const idx = endpointsToTry.indexOf(_preferredEndpoint);
+    if (idx > 0) {
+      // Move preferred to front
+      endpointsToTry.splice(idx, 1);
+      endpointsToTry.unshift(_preferredEndpoint);
+      log.debug("Using preferred endpoint first", { endpoint: _preferredEndpoint });
+    }
+  }
+
   // Try all endpoints in fallback order (Daily -> Autopush -> Prod)
-  for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+  for (const endpoint of endpointsToTry) {
     const url = `${endpoint}/v1internal:generateContent`;
     
     try {
@@ -498,6 +513,11 @@ export async function executeImageGeneration(
       });
 
       if (!response.ok) {
+        // If preferred endpoint fails, clear it so we don't stick to a bad one
+        if (endpoint === _preferredEndpoint) {
+          _preferredEndpoint = null;
+        }
+
         const errorText = await response.text();
         log.debug("Endpoint failed", {
           endpoint,
@@ -519,8 +539,19 @@ export async function executeImageGeneration(
       const data = (await response.json()) as AntigravityImageResponse;
       log.debug("Image generation response received", { endpoint, hasResponse: !!data.response });
 
+      // Success! Update preferred endpoint for next time
+      if (_preferredEndpoint !== endpoint) {
+        log.debug("Updating preferred endpoint", { old: _preferredEndpoint, new: endpoint });
+        _preferredEndpoint = endpoint;
+      }
+
       return parseImageResponse(data, workingDirectory, requestPayload);
     } catch (error) {
+      // If preferred endpoint errors, clear it
+      if (endpoint === _preferredEndpoint) {
+        _preferredEndpoint = null;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       log.debug("Fetch error", { endpoint, error: message });
       lastError = message;
