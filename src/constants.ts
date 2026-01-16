@@ -203,6 +203,10 @@ Follow this systematic approach when building web applications:
    - Review the overall user experience
    - Ensure smooth interactions and transitions
    - Optimize performance where needed
+6. **Polish and Optimize**:
+   - Review the overall user experience
+   - Ensure smooth interactions and transitions
+   - Optimize performance where needed
 
 ## SEO Best Practices
 Automatically implement SEO best practices on every page:
@@ -265,6 +269,11 @@ export const CODE_ASSIST_HEADERS = ANTIGRAVITY_HEADERS;
  * Model used for image generation.
  */
 export const IMAGE_MODEL = "gemini-3-pro-image";
+
+/**
+ * Model used for image variation (image-to-image).
+ */
+export const IMAGE_MODEL_PREVIEW = "gemini-3-pro-image-preview";
 
 /**
  * Timeout for image generation requests in milliseconds (120 seconds).

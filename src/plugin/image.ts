@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
 import {
@@ -7,6 +7,7 @@ import {
   ANTIGRAVITY_HEADERS,
   ASPECT_RATIOS,
   IMAGE_MODEL,
+  IMAGE_MODEL_PREVIEW,
   IMAGE_TIMEOUT_MS,
   SAFETY_SETTINGS_OFF,
 } from "../constants";
@@ -24,6 +25,8 @@ export interface ImageGenerationArgs {
   aspect_ratio?: string;
   /** Image quality: "standard" or "hd" (4K resolution) */
   quality?: string;
+  /** Optional paths to reference images for image-to-image generation */
+  imagePaths?: string[];
 }
 
 /**
@@ -232,12 +235,14 @@ export function parseAspectRatio(aspectRatio?: string): string {
  * @param prompt - Image description prompt
  * @param aspectRatio - Normalized aspect ratio
  * @param quality - Image quality ("standard" or "hd")
+ * @param images - Optional list of base64 encoded images with mime types
  * @returns Request payload object
  */
 export function buildImageRequest(
   prompt: string,
   aspectRatio: string,
-  quality: string
+  quality: string,
+  images: Array<{ data: string; mimeType: string }> = []
 ): Record<string, unknown> {
   const imageConfig: Record<string, string> = {
     aspectRatio,
@@ -248,11 +253,26 @@ export function buildImageRequest(
     imageConfig.imageSize = "4K";
   }
 
+  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+
+  // Add images first
+  for (const img of images) {
+    parts.push({
+      inlineData: {
+        mimeType: img.mimeType,
+        data: img.data,
+      },
+    });
+  }
+
+  // Add prompt
+  parts.push({ text: prompt });
+
   return {
     contents: [
       {
         role: "user",
-        parts: [{ text: prompt }],
+        parts,
       },
     ],
     generationConfig: {
@@ -397,7 +417,7 @@ export async function executeImageGeneration(
   workingDirectory: string,
   abortSignal?: AbortSignal
 ): Promise<string> {
-  const { prompt, aspect_ratio, quality = "standard" } = args;
+  const { prompt, aspect_ratio, quality = "standard", imagePaths } = args;
 
   if (!prompt || prompt.trim().length === 0) {
     return "Error: Please provide a description of the image you want to generate.";
@@ -407,20 +427,50 @@ export async function executeImageGeneration(
   const aspectRatio = parseAspectRatio(aspect_ratio);
   const normalizedQuality = quality.toLowerCase() === "hd" ? "hd" : "standard";
 
+  // Process reference images if provided
+  const processedImages: Array<{ data: string; mimeType: string }> = [];
+  if (imagePaths && imagePaths.length > 0) {
+    if (imagePaths.length > 10) {
+      return "Error: Maximum of 10 reference images allowed.";
+    }
+
+    for (const path of imagePaths) {
+      try {
+        if (existsSync(path)) {
+          const buffer = readFileSync(path);
+          const ext = path.split(".").pop()?.toLowerCase();
+          let mimeType = "image/jpeg";
+          if (ext === "png") mimeType = "image/png";
+          if (ext === "webp") mimeType = "image/webp";
+          
+          processedImages.push({
+            data: buffer.toString("base64"),
+            mimeType,
+          });
+        } else {
+          log.warn(`Reference image not found: ${path}`);
+        }
+      } catch (e) {
+        log.warn(`Failed to read reference image: ${path}`, { error: String(e) });
+      }
+    }
+  }
+
   log.debug("Executing image generation", {
     promptLength: prompt.length,
     aspectRatio,
     quality: normalizedQuality,
     workingDirectory,
+    referenceImageCount: processedImages.length,
   });
 
   // Build request payload
-  const requestPayload = buildImageRequest(prompt, aspectRatio, normalizedQuality);
+  const requestPayload = buildImageRequest(prompt, aspectRatio, normalizedQuality, processedImages);
 
   // Wrap in Antigravity format
   const wrappedBody = {
     project: projectId,
-    model: IMAGE_MODEL, // Always use base model: gemini-3-pro-image
+    model: IMAGE_MODEL, // Always use base model: gemini-3-pro-image (it likely handles multimodal input)
     userAgent: "antigravity",
     requestId: generateRequestId(),
     requestType: "image_gen",

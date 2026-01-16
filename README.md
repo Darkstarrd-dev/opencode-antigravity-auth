@@ -12,11 +12,11 @@
 > | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `google_search` Tool (Enhanced with Citations)                                 | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
-> | `generate_image` Tool (Native Implementation)                                  | Ported from [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) logic                    |
+> | `generate_image` Tool (Native Implementation + Img2Img)                        | Ported from [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) logic                    |
 > | `count_tokens` Tool                                                            | Native Implementation                                                                                     |
 > | `thoughtSignature` logic (Tool-loop recovery)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **Status:** Version 1.2.0 - Enhanced google_search, added count_tokens, and fixed tool-loop signatures
+> **Status:** Version 1.3.0 - Added Image-to-Image (Image Variation) support for `generate_image`.
 
 ---
 
@@ -31,7 +31,7 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 - **Extended Thinking** - Native support for Claude thinking budgets and Gemini 3 thinking levels
 - **Auto Recovery** - Automatic session recovery from Claude tool_result_missing errors
 - **Plugin Compatible** - Works alongside other OpenCode plugins (opencodesync, etc.)
-- **generate_image Tool** - AI image generation with auto-save, WebP conversion, and 4K support (Stability varies)
+- **generate_image Tool** - AI image generation with text-to-image, image-to-image (multi-image fusion), auto-save, and 4K support
 - **google_search Tool** - High-quality web search with structural citations and URL analysis.
 - **count_tokens Tool** - Count tokens for any text using specified models.
 
@@ -53,7 +53,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.2.0"]
+     "plugin": ["opencode-antigravity-auth-remix@1.3.0"]
    }
    ```
 
@@ -104,7 +104,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.2.0"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.0"],
   "provider": {
     "google": {
       "models": {
@@ -248,13 +248,16 @@ AI image generation with automatic file saving and WebP conversion. Uses `gemini
 | `prompt` | string | Yes | - | Image description |
 | `aspect_ratio` | string | No | "1:1" | Aspect ratio |
 | `quality` | string | No | "standard" | Image quality (hd = 4K) |
+| `imagePaths` | string[] | No | [] | List of reference image paths for Image-to-Image generation (max 10) |
 
 **Supported aspect ratios:** `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `21:9`
 
 **Features:**
-- Auto-saves to `{project}/imgs/` directory
-- Generates WebP version (75% quality) alongside original
-- 4K support via dynamic model configuration
+- **Text-to-Image**: Generate images from scratch using prompts
+- **Image-to-Image**: Provide reference images for style transfer, editing, or fusion
+- **Auto-save**: Saves to `{project}/imgs/` directory
+- **WebP**: Generates optimized WebP version (75% quality) alongside original
+- **4K Support**: High-definition output via dynamic model configuration
 
 ### google_search
 
@@ -289,11 +292,11 @@ MIT
 > | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 > | 双配额系统、多账号轮换、会话恢复、思考过程恢复 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `google_search` 工具 (支持结构化引用)                                            | [shekohex/opencode-google-antigravity-auth](https://github.com/shekohex/opencode-google-antigravity-auth) |
-> | `generate_image` 工具 (原生实现)                                  | 移植自 [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) 逻辑                                                                    |
+> | `generate_image` 工具 (原生实现 + 图生图)                                  | 移植自 [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) 逻辑                                                                    |
 > | `count_tokens` 工具                                                            | 原生实现                                                                                     |
 > | `thoughtSignature` 逻辑 (工具调用签名恢复)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **状态:** 版本 1.2.0 - 增强了 google_search，新增了 count_tokens，并修复了工具调用签名问题
+> **状态:** 版本 1.3.0 - 为 `generate_image` 新增了图生图 (Image-to-Image/Image Variation) 支持。
 
 ---
 
@@ -308,7 +311,7 @@ MIT
 - **扩展思考能力** - 原生支持 Claude 思考预算和 Gemini 3 思考等级
 - **自动恢复** - 自动处理 Claude 的 `tool_result_missing` 错误并恢复会话
 - **插件兼容性** - 可与其他 OpenCode 插件 (如 opencodesync 等) 同时运行
-- **generate_image 工具** - AI 图像生成，支持自动保存、WebP 转换和 4K 输出 (稳定性视配额而定)
+- **generate_image 工具** - AI 图像生成，支持文生图、图生图 (多图融合)、自动保存、WebP 转换和 4K 输出
 - **google_search 工具** - 高质量网页搜索，支持结构化引用和 URL 分析。
 - **count_tokens 工具** - 统计指定文本在特定模型下的 Token 消耗。
 
@@ -328,7 +331,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.2.0"]
+     "plugin": ["opencode-antigravity-auth-remix@1.3.0"]
    }
    ```
 
@@ -379,7 +382,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.2.0"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.0"],
   "provider": {
     "google": {
       "models": {
@@ -523,13 +526,16 @@ opencode run "你好" --model=google/gemini-2.5-flash
 | `prompt` | string | 是 | - | 图像描述词 |
 | `aspect_ratio` | string | 否 | "1:1" | 纵横比 |
 | `quality` | string | 否 | "standard" | 图像质量 (hd = 4K) |
+| `imagePaths` | string[] | 否 | [] | 图生图参考图片路径列表 (最多10张) |
 
 **支持的纵横比:** `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `21:9`
 
 **主要特性:**
-- 自动保存至项目目录下的 `{project}/imgs/`
-- 同时生成 WebP 版本 (75% 质量) 以节省空间
-- 支持动态配置 4K (HD) 高清输出
+- **文生图**: 通过提示词生成图片
+- **图生图**: 提供参考图片进行风格迁移、编辑或融合
+- **自动保存**: 保存至项目目录下的 `{project}/imgs/`
+- **WebP**: 同时生成 WebP 版本 (75% 质量) 以节省空间
+- **高清支持**: 支持动态配置 4K (HD) 高清输出
 
 ### google_search (搜索工具)
 
