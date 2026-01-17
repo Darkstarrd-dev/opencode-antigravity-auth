@@ -16,7 +16,7 @@
 > | `count_tokens` Tool                                                            | Native Implementation                                                                                     |
 > | `thoughtSignature` logic (Tool-loop recovery)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **Status:** Version 1.3.3 - Added Image-to-Image (Image Variation) support for `generate_image`.
+> **Status:** Version 1.3.5 - Improved request stability with endpoint timeout and sticky routing.
 
 ---
 
@@ -53,7 +53,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.3.3"]
+     "plugin": ["opencode-antigravity-auth-remix@1.3.5"]
    }
    ```
 
@@ -104,7 +104,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.3.3"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.5"],
   "provider": {
     "google": {
       "models": {
@@ -313,7 +313,7 @@ MIT
 > | `count_tokens` 工具                                                            | 原生实现                                                                                     |
 > | `thoughtSignature` 逻辑 (工具调用签名恢复)                                  | [znlsl/Antigravity2Api](https://github.com/znlsl/Antigravity2Api#)                                        |
 >
-> **状态:** 版本 1.3.1 - 为 `generate_image` 新增了图生图 (Image-to-Image/Image Variation) 支持。
+> **状态:** 版本 1.3.5 - 修复请求稳定性。
 
 ---
 
@@ -348,7 +348,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.3.3"]
+     "plugin": ["opencode-antigravity-auth-remix@1.3.5"]
    }
    ```
 
@@ -399,7 +399,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.3.3"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.5"],
   "provider": {
     "google": {
       "models": {

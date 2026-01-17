@@ -1,6 +1,13 @@
 import { exec } from "node:child_process";
 import { tool } from "@opencode-ai/plugin";
-import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_PROVIDER_ID, type HeaderStyle } from "./constants";
+import {
+  ANTIGRAVITY_ENDPOINT_AUTOPUSH,
+  ANTIGRAVITY_ENDPOINT_DAILY,
+  ANTIGRAVITY_ENDPOINT_FALLBACKS,
+  ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_PROVIDER_ID,
+  type HeaderStyle,
+} from "./constants";
 import { authorizeAntigravity, exchangeAntigravity } from "./antigravity/oauth";
 import type { AntigravityTokenExchangeResult } from "./antigravity/oauth";
 import { accessTokenExpired, isOAuthAuth, parseRefreshParts } from "./plugin/auth";
@@ -65,6 +72,92 @@ const warmupAttemptedSessionIds = new Set<string>();
 const warmupSucceededSessionIds = new Set<string>();
 
 const log = createLogger("plugin");
+
+const UPSTREAM_TIMEOUT_MS = 25_000;
+const ENDPOINT_STICKY_TTL_MS = 10 * 60_000;
+
+type EndpointKey = string;
+type StickyEndpointState = { endpoint: string; expiresAt: number };
+
+const stickyEndpointByKey = new Map<EndpointKey, StickyEndpointState>();
+
+function makeEndpointKey(family: ModelFamily, headerStyle: HeaderStyle): EndpointKey {
+  return `${family}:${headerStyle}`;
+}
+
+function nowMs(): number {
+  return Date.now();
+}
+
+function getStickyEndpoint(key: EndpointKey): string | null {
+  const state = stickyEndpointByKey.get(key);
+  if (!state) return null;
+  if (state.expiresAt <= nowMs()) {
+    stickyEndpointByKey.delete(key);
+    return null;
+  }
+  return state.endpoint;
+}
+
+function setStickyEndpoint(key: EndpointKey, endpoint: string): void {
+  stickyEndpointByKey.set(key, { endpoint, expiresAt: nowMs() + ENDPOINT_STICKY_TTL_MS });
+}
+
+function clearStickyEndpoint(key: EndpointKey, endpoint?: string): void {
+  const state = stickyEndpointByKey.get(key);
+  if (!state) return;
+  if (endpoint && state.endpoint !== endpoint) return;
+  stickyEndpointByKey.delete(key);
+}
+
+function orderedEndpointsFor(_family: ModelFamily, headerStyle: HeaderStyle): string[] {
+  // Prefer daily first for Antigravity header style.
+  // This matches observed stability vs prod when upstream changes.
+  const candidates = headerStyle === "antigravity"
+    ? [ANTIGRAVITY_ENDPOINT_DAILY, ANTIGRAVITY_ENDPOINT_PROD, ANTIGRAVITY_ENDPOINT_AUTOPUSH]
+    : [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
+
+  // De-dup while preserving order.
+  return Array.from(new Set(candidates));
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo,
+  init: RequestInit,
+  timeoutMs: number,
+  parentSignal?: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+
+  const onParentAbort = () => {
+    try {
+      controller.abort(parentSignal?.reason);
+    } catch {
+      controller.abort();
+    }
+  };
+
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      onParentAbort();
+    } else {
+      parentSignal.addEventListener("abort", onParentAbort, { once: true });
+    }
+  }
+
+  const timeout = setTimeout(() => {
+    controller.abort(new Error(`Upstream request timeout after ${timeoutMs}ms`));
+  }, timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    if (parentSignal && !parentSignal.aborted) {
+      parentSignal.removeEventListener("abort", onParentAbort);
+    }
+  }
+}
 
 function trackWarmupAttempt(sessionId: string): boolean {
   if (warmupSucceededSessionIds.has(sessionId)) {
@@ -1379,8 +1472,16 @@ export const createAntigravityPlugin = (providerId: string) => async (
             // Flag to force thinking recovery on retry after API error
             let forceThinkingRecovery = false;
             
-            for (let i = 0; i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length; i++) {
-              const currentEndpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[i];
+              const endpointKey = makeEndpointKey(family, headerStyle);
+              const stickyEndpoint = getStickyEndpoint(endpointKey);
+              const orderedEndpoints = orderedEndpointsFor(family, headerStyle);
+              const endpoints = stickyEndpoint
+                ? Array.from(new Set([stickyEndpoint, ...orderedEndpoints]))
+                : orderedEndpoints;
+
+
+              for (let i = 0; i < endpoints.length; i++) {
+              const currentEndpoint = endpoints[i]!;
 
               try {
                 const prepared = prepareAntigravityRequest(
@@ -1417,14 +1518,21 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                 await runThinkingWarmup(prepared, projectContext.effectiveProjectId);
 
-                const response = await fetch(prepared.request, prepared.init);
+                const response = await fetchWithTimeout(
+                  prepared.request,
+                  prepared.init,
+                  UPSTREAM_TIMEOUT_MS,
+                  abortSignal,
+                );
                 pushDebug(`status=${response.status} ${response.statusText}`);
 
 
 
 
-                // Handle 429 rate limit with improved logic
-                if (response.status === 429) {
+                 // Handle 429 rate limit with improved logic
+                 if (response.status === 429) {
+                   // Endpoint is behaving as rate-limited; allow switching endpoints next time.
+                   clearStickyEndpoint(endpointKey, currentEndpoint);
                   const headerRetryMs = retryAfterMsFromResponse(response);
                   const bodyInfo = await extractRetryInfoFromBody(response);
                   const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
@@ -1587,22 +1695,25 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   await logResponseBody(debugContext, response, response.status);
                 }
 
-                if (shouldRetryEndpoint && i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
-                  lastFailure = {
-                    response,
-                    streaming: prepared.streaming,
-                    debugContext,
-                    requestedModel: prepared.requestedModel,
-                    projectId: prepared.projectId,
-                    endpoint: prepared.endpoint,
-                    effectiveModel: prepared.effectiveModel,
-                    sessionId: prepared.sessionId,
-                    toolDebugMissing: prepared.toolDebugMissing,
-                    toolDebugSummary: prepared.toolDebugSummary,
-                    toolDebugPayload: prepared.toolDebugPayload,
-                  };
-                  continue;
-                }
+                 if (shouldRetryEndpoint && i < endpoints.length - 1) {
+                   // Endpoint returned a retryable HTTP status; unstick and try next endpoint.
+                   clearStickyEndpoint(endpointKey, currentEndpoint);
+
+                   lastFailure = {
+                     response,
+                     streaming: prepared.streaming,
+                     debugContext,
+                     requestedModel: prepared.requestedModel,
+                     projectId: prepared.projectId,
+                     endpoint: prepared.endpoint,
+                     effectiveModel: prepared.effectiveModel,
+                     sessionId: prepared.sessionId,
+                     toolDebugMissing: prepared.toolDebugMissing,
+                     toolDebugSummary: prepared.toolDebugSummary,
+                     toolDebugPayload: prepared.toolDebugPayload,
+                   };
+                   continue;
+                 }
 
                 // Success or non-retryable error - return the response
                 if (response.ok) {
@@ -1704,9 +1815,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   }
                 }
 
+                // Mark successful endpoint as sticky for this family+quota.
+                // We only set stickiness after we have a transformed response, so streaming/non-streaming
+                // both count as success.
+                setStickyEndpoint(endpointKey, currentEndpoint);
+
                 return transformedResponse;
-              } catch (error) {
-                // Handle recoverable thinking errors - retry with forced recovery
+               } catch (error) {
+                 // Any network/timeout error should unstick the endpoint so we can try the next one.
+                 clearStickyEndpoint(endpointKey, currentEndpoint);
+
+                 // Handle recoverable thinking errors - retry with forced recovery
                 if (error instanceof Error && error.message === "THINKING_RECOVERY_NEEDED") {
                   // Only retry once with forced recovery to avoid infinite loops
                   if (!forceThinkingRecovery) {
@@ -1734,10 +1853,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   });
                 }
 
-                if (i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
-                  lastError = error instanceof Error ? error : new Error(String(error));
-                  continue;
-                }
+                 if (i < endpoints.length - 1) {
+                   lastError = error instanceof Error ? error : new Error(String(error));
+                   continue;
+                 }
 
                 // All endpoints failed for this account - track failure and try next account
                 const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index);
