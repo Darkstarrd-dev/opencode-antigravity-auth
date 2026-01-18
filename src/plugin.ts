@@ -2067,21 +2067,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
       },
     }),
 
-    count_tokens: tool({
-      description: "Count the number of tokens in a given text string for a specific model.",
-      args: {
-        text: tool.schema.string().describe("The text to count tokens for"),
-        model: tool.schema.string().optional().describe("The model to use for token counting (defaults to gemini-2.5-flash)"),
-      },
-      async execute(args, ctx) {
-        if (!cachedGetAuth) {
-          throw new Error("Auth not initialized");
-        }
-        // Not yet implemented, return placeholder
-        return `Token counting feature: Not yet implemented. Text length: ${args.text.length} characters.`;
-      },
-    }),
-
     generate_image: tool({
       description: `Generate images from text descriptions using Gemini's image generation model. Use this tool when the user explicitly asks to generate, create, draw, or make an image, picture, illustration, chart, diagram, or artwork. Examples of triggers: '生成一张xxx的图片', '画一张xxx', '做一个xxx的图表', '创建xxx的插图', 'generate an image of...', 'draw a picture of...', 'create an illustration of...'. Images are automatically saved to the imgs/ directory in the workspace.`,
       args: {

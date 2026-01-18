@@ -12,6 +12,7 @@ import {
   SAFETY_SETTINGS_OFF,
 } from "../constants";
 import { createLogger } from "./logger";
+import { generateRequestId } from "./request-helpers";
 
 const log = createLogger("image");
 
@@ -66,13 +67,6 @@ interface ImageSaveResult {
   originalPath?: string;
   webpPath?: string;
   error?: string;
-}
-
-/**
- * Generates a unique request ID for image generation requests.
- */
-function generateRequestId(): string {
-  return `img-${randomUUID()}`;
 }
 
 /**

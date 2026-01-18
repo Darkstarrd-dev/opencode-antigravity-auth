@@ -283,7 +283,7 @@ export async function executeSearch(
 
   let lastError: string | null = null;
 
-  // Try all endpoints in fallback order (Daily -> Autopush -> Prod)
+  // Try all endpoints in fallback order (daily-non-sandbox → prod → daily → autopush)
   for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
     const url = `${endpoint}/v1internal:generateContent`;
 
