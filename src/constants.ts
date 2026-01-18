@@ -32,15 +32,17 @@ export const ANTIGRAVITY_REDIRECT_URI = "http://localhost:51121/oauth-callback";
 export const ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
+export const ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX = "https://daily-cloudcode-pa.googleapis.com";
 
 /**
- * Endpoint fallback order (daily → autopush → prod).
+ * Endpoint fallback order (daily-non-sandbox → prod → daily → autopush).
  * Shared across request handling and project discovery to mirror CLIProxy behavior.
  */
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
+  ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX,
+  ANTIGRAVITY_ENDPOINT_PROD,
   ANTIGRAVITY_ENDPOINT_DAILY,
   ANTIGRAVITY_ENDPOINT_AUTOPUSH,
-  ANTIGRAVITY_ENDPOINT_PROD,
 ] as const;
 
 /**
@@ -71,7 +73,7 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": "antigravity/1.11.5 windows/amd64",
+  "User-Agent": "antigravity/1.11.9 windows/amd64",
   "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
   "Client-Metadata": '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
 } as const;
@@ -153,4 +155,79 @@ You are pair programming with a USER to solve their coding task. The task may re
 
 <priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
 `;
+
+// ============================================================================
+// SEARCH TOOL CONSTANTS
+// ============================================================================
+
+/**
+ * Model used for Google Search tool execution.
+ */
+export const SEARCH_MODEL = "gemini-2.5-flash";
+
+/**
+ * Token budget for fast search (default when thinking=false).
+ */
+export const SEARCH_THINKING_BUDGET_FAST = 4096;
+
+/**
+ * Token budget for deep search (default when thinking=true).
+ */
+export const SEARCH_THINKING_BUDGET_DEEP = 16384;
+
+/**
+ * Timeout for search requests in milliseconds (60 seconds).
+ */
+export const SEARCH_TIMEOUT_MS = 60 * 1000;
+
+/**
+ * Search endpoints and headers (mapped to Antigravity).
+ */
+export const CODE_ASSIST_HEADERS = ANTIGRAVITY_HEADERS;
+
+// ============================================================================
+// IMAGE GENERATION CONSTANTS
+// ============================================================================
+
+/**
+ * Model used for image generation.
+ */
+export const IMAGE_MODEL = "gemini-3-pro-image";
+
+/**
+ * Model used for image variation (image-to-image).
+ */
+export const IMAGE_MODEL_PREVIEW = "gemini-3-pro-image-preview";
+
+/**
+ * Timeout for image generation requests in milliseconds (120 seconds).
+ */
+export const IMAGE_TIMEOUT_MS = 120 * 1000;
+
+/**
+ * Supported aspect ratios for image generation.
+ */
+export const ASPECT_RATIOS: Record<string, string> = {
+  "1:1": "1:1",
+  "16:9": "16:9",
+  "9:16": "9:16",
+  "4:3": "4:3",
+  "3:4": "3:4",
+  "21:9": "21:9",
+  square: "1:1",
+  landscape: "16:9",
+  portrait: "9:16",
+  wide: "21:9",
+};
+
+/**
+ * Safety settings for image generation.
+ */
+export const SAFETY_SETTINGS_OFF = [
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" },
+];
 

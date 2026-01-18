@@ -96,6 +96,7 @@ export interface PluginResult {
     methods: AuthMethod[];
   };
   event?: (payload: PluginEventPayload) => void;
+  tool?: Record<string, unknown>;
 }
 
 export interface RefreshParts {

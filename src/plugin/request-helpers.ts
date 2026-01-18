@@ -2771,3 +2771,25 @@ data: ${JSON.stringify({ type: "message_stop" })}
   });
 }
 
+/**
+ * Generate a unique request ID for tracking.
+ */
+export function generateRequestId(): string {
+  return "req-" + Math.random().toString(36).substring(2, 11);
+}
+
+/**
+ * Agent session ID constant for search/image tools.
+ */
+const AGENT_SESSION_ID = `-${Math.floor(Math.random() * 9_000_000_000_000_000)}`;
+
+/**
+ * Extract session ID from request URL or return agent session ID.
+ */
+export function getSessionId(req?: RequestInfo): string | undefined {
+  if (!req) return AGENT_SESSION_ID;
+  const url = typeof req === "string" ? req : (req as Request).url;
+  const match = url.match(/sessions\/([^/?]+)/);
+  return match?.[1] || AGENT_SESSION_ID;
+}
+

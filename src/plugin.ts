@@ -40,6 +40,9 @@ import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
 import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
+import { executeImageGeneration } from "./plugin/image";
+import { executeSearch } from "./plugin/search";
+import { tool } from "@opencode-ai/plugin";
 import type {
   GetAuth,
   LoaderResult,
@@ -700,6 +703,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
     autoUpdate: config.auto_update,
   });
 
+  // Add authentication cache variable for tools
+  let cachedGetAuth: (() => Promise<{ accessToken: string; projectId: string }>) | null = null;
+
   // Event handler for session recovery and updates
   const eventHandler = async (input: { event: { type: string; properties?: unknown } }) => {
     // Forward to update checker
@@ -775,6 +781,49 @@ export const createAntigravityPlugin = (providerId: string) => async (
       if (accountManager.getAccountCount() > 0) {
         accountManager.requestSaveToDisk();
       }
+
+      // Set up cachedGetAuth for tools
+      cachedGetAuth = async () => {
+        const latestAuth = await getAuth();
+        if (!isOAuthAuth(latestAuth)) {
+          throw new Error("No valid OAuth auth");
+        }
+
+        const account = accountManager.getCurrentOrNextForFamily(
+          "gemini",
+          null,
+          config.account_selection_strategy,
+          "antigravity",
+          config.pid_offset_enabled,
+        );
+
+        if (!account) {
+          throw new Error("No available account");
+        }
+
+        let authRecord = accountManager.toAuthDetails(account);
+
+        // Refresh token if expired
+        if (accessTokenExpired(authRecord)) {
+          const refreshed = await refreshAccessToken(authRecord, client, providerId);
+          if (!refreshed) {
+            throw new Error("Token refresh failed");
+          }
+          authRecord = refreshed;
+          accountManager.updateFromAuth(account, refreshed);
+        }
+
+        const projectContext = await ensureProjectContext(authRecord);
+
+        if (!authRecord.access) {
+          throw new Error("Access token is missing after refresh");
+        }
+
+        return {
+          accessToken: authRecord.access,
+          projectId: projectContext.effectiveProjectId,
+        };
+      };
 
       // Initialize proactive token refresh queue (ported from LLM-API-Key-Proxy)
       let refreshQueue: ProactiveRefreshQueue | null = null;
@@ -1994,6 +2043,72 @@ export const createAntigravityPlugin = (providerId: string) => async (
         type: "api",
       },
     ],
+  },
+  
+  tool: {
+    google_search: tool({
+      description: `Search the web using Google Search and analyze URLs. Returns real-time information from the internet with source citations. Use this when you need up-to-date information about current events, recent developments, or any topic that may have changed. You can also provide specific URLs to analyze. IMPORTANT: If the user mentions or provides any URLs in their query, you MUST extract those URLs and pass them in the 'urls' parameter for direct analysis.`,
+      args: {
+        query: tool.schema.string().describe("The search query or question to answer using web search"),
+        urls: tool.schema.array(tool.schema.string()).optional().describe("List of specific URLs to fetch and analyze. IMPORTANT: Always extract and include any URLs mentioned by the user in their query here."),
+        thinking: tool.schema.boolean().optional().default(true).describe("Enable deep thinking for more thorough analysis (default: true)"),
+      },
+      async execute(args, ctx) {
+        if (!cachedGetAuth) {
+          throw new Error("Auth not initialized");
+        }
+        const authContext = await cachedGetAuth();
+        return executeSearch(
+          { query: args.query, urls: args.urls, thinking: args.thinking },
+          authContext.accessToken,
+          authContext.projectId,
+          ctx.abort,
+        );
+      },
+    }),
+
+    count_tokens: tool({
+      description: "Count the number of tokens in a given text string for a specific model.",
+      args: {
+        text: tool.schema.string().describe("The text to count tokens for"),
+        model: tool.schema.string().optional().describe("The model to use for token counting (defaults to gemini-2.5-flash)"),
+      },
+      async execute(args, ctx) {
+        if (!cachedGetAuth) {
+          throw new Error("Auth not initialized");
+        }
+        // Not yet implemented, return placeholder
+        return `Token counting feature: Not yet implemented. Text length: ${args.text.length} characters.`;
+      },
+    }),
+
+    generate_image: tool({
+      description: `Generate images from text descriptions using Gemini's image generation model. Use this tool when the user explicitly asks to generate, create, draw, or make an image, picture, illustration, chart, diagram, or artwork. Examples of triggers: '生成一张xxx的图片', '画一张xxx', '做一个xxx的图表', '创建xxx的插图', 'generate an image of...', 'draw a picture of...', 'create an illustration of...'. Images are automatically saved to the imgs/ directory in the workspace.`,
+      args: {
+        prompt: tool.schema.string().describe("Detailed description of the image to generate. Be specific about style, composition, colors, and content."),
+        aspect_ratio: tool.schema.string().optional().default("1:1").describe("Aspect ratio of the image. Supported values: '1:1' (square), '16:9' (landscape/widescreen), '9:16' (portrait/vertical), '4:3', '3:4', '21:9' (ultrawide). Aliases: 'square', 'landscape', 'portrait', 'wide'."),
+        quality: tool.schema.string().optional().default("standard").describe("Image quality: 'standard' for normal resolution, 'hd' for 4K high-resolution output."),
+        reference_images: tool.schema.array(tool.schema.string()).optional().describe("Optional list of absolute file paths to reference images for image-to-image generation. Use this when the user wants to modify or use an existing image as a base."),
+      },
+      async execute(args, ctx) {
+        if (!cachedGetAuth) {
+          throw new Error("Auth not initialized");
+        }
+        const authContext = await cachedGetAuth();
+        return executeImageGeneration(
+          {
+            prompt: args.prompt,
+            aspect_ratio: args.aspect_ratio,
+            quality: args.quality,
+            imagePaths: args.reference_images,
+          },
+          authContext.accessToken,
+          authContext.projectId,
+          directory,
+          ctx.abort,
+        );
+      },
+    }),
   },
   };
 };

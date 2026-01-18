@@ -61,6 +61,7 @@
     "dependencies": {
         "@openauthjs/openauth": "^0.4.3",
         "proper-lockfile": "^4.1.2",
+        "sharp": "^0.33.5",
         "xdg-basedir": "^5.1.0",
         "zod": "^3.24.0"
     }
