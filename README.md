@@ -13,7 +13,7 @@
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery, `google_search` Tool | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` Tool (Native Implementation + Img2Img)                        | Native Implementation                                                                                     |
 >
-> **Status:** Version 1.3.6 - Enhanced with native tools integration and improved stability.
+> **Status:** Version 1.3.7 - Enhanced with native tools integration and improved stability.
 
 ---
 
@@ -49,7 +49,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.3.6"]
+     "plugin": ["opencode-antigravity-auth-remix@1.3.7"]
    }
    ```
 
@@ -100,7 +100,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.3.6"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.7"],
   "provider": {
     "google": {
       "models": {
@@ -297,7 +297,7 @@ MIT
 > | 双配额系统、多账号轮换、会话恢复、思考过程恢复、`google_search` 工具 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` 工具 (原生实现 + 图生图)                                  | 原生实现                                                                                     |
 >
-> **状态:** 版本 1.3.6 - 集成原生工具并优化稳定性。
+> **状态:** 版本 1.3.7 - 集成原生工具并优化稳定性。
 
 ---
 
@@ -331,7 +331,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.3.6"]
+     "plugin": ["opencode-antigravity-auth-remix@1.3.7"]
    }
    ```
 
@@ -382,7 +382,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.3.6"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.7"],
   "provider": {
     "google": {
       "models": {
