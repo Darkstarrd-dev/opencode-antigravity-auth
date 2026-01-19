@@ -100,7 +100,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.3.7"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.8"],
   "provider": {
     "google": {
       "models": {
@@ -382,7 +382,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth-remix@1.3.7"],
+  "plugin": ["opencode-antigravity-auth-remix@1.3.8"],
   "provider": {
     "google": {
       "models": {
