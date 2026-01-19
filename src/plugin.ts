@@ -70,7 +70,8 @@ const preferredEndpointByHeaderStyle: Partial<Record<HeaderStyle, string>> = {};
 const log = createLogger("plugin");
 
 function buildEndpointFallbacks(headerStyle: HeaderStyle): string[] {
-  const endpoints = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
+  // 必须显式断言为 string[] 避免 TS 推断为 readonly tuple 或联合类型数组导致的 indexOf 参数不兼容
+  const endpoints: string[] = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
   const preferred = preferredEndpointByHeaderStyle[headerStyle];
   if (!preferred) {
     return endpoints;
@@ -83,12 +84,14 @@ function buildEndpointFallbacks(headerStyle: HeaderStyle): string[] {
   return endpoints;
 }
 
-function markPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string): void {
-  preferredEndpointByHeaderStyle[headerStyle] = endpoint;
+function markPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string | undefined): void {
+  if (endpoint) {
+    preferredEndpointByHeaderStyle[headerStyle] = endpoint;
+  }
 }
 
-function clearPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string): void {
-  if (preferredEndpointByHeaderStyle[headerStyle] === endpoint) {
+function clearPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string | undefined): void {
+  if (endpoint && preferredEndpointByHeaderStyle[headerStyle] === endpoint) {
     delete preferredEndpointByHeaderStyle[headerStyle];
   }
 }
