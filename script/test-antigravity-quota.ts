@@ -179,7 +179,7 @@ async function runE2e(models: string[], prompt: string, timeoutMs: number, debug
 }
 
 async function main(): Promise<void> {
-  const { models, prompt, timeout, runE2e, debug, help } = parseArgs();
+  const { models, prompt, timeout, runE2e: shouldRunE2e, debug, help } = parseArgs();
 
   if (help) {
     printHelp();
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
 
   printRouting(models);
 
-  if (!runE2e) {
+  if (!shouldRunE2e) {
     return;
   }
 
