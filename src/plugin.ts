@@ -64,7 +64,34 @@ function getCapacityBackoffDelay(consecutiveFailures: number): number {
 const warmupAttemptedSessionIds = new Set<string>();
 const warmupSucceededSessionIds = new Set<string>();
 
+// 记录当前会话可用的端点，避免每次全量遍历
+const preferredEndpointByHeaderStyle: Partial<Record<HeaderStyle, string>> = {};
+
 const log = createLogger("plugin");
+
+function buildEndpointFallbacks(headerStyle: HeaderStyle): string[] {
+  const endpoints = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
+  const preferred = preferredEndpointByHeaderStyle[headerStyle];
+  if (!preferred) {
+    return endpoints;
+  }
+  const index = endpoints.indexOf(preferred);
+  if (index > 0) {
+    endpoints.splice(index, 1);
+    endpoints.unshift(preferred);
+  }
+  return endpoints;
+}
+
+function markPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string): void {
+  preferredEndpointByHeaderStyle[headerStyle] = endpoint;
+}
+
+function clearPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string): void {
+  if (preferredEndpointByHeaderStyle[headerStyle] === endpoint) {
+    delete preferredEndpointByHeaderStyle[headerStyle];
+  }
+}
 
 function trackWarmupAttempt(sessionId: string): boolean {
   if (warmupSucceededSessionIds.has(sessionId)) {
@@ -1226,8 +1253,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
             // Track if token was consumed (for hybrid strategy refund on error)
             let tokenConsumed = false;
             
-            for (let i = 0; i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length; i++) {
-              const currentEndpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[i];
+            const endpointFallbacks = buildEndpointFallbacks(headerStyle);
+            for (let i = 0; i < endpointFallbacks.length; i++) {
+              const currentEndpoint = endpointFallbacks[i];
 
               try {
                 const prepared = prepareAntigravityRequest(
@@ -1277,6 +1305,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                 // Handle 429 rate limit with improved logic
                 if (response.status === 429) {
+                  clearPreferredEndpoint(headerStyle, currentEndpoint);
                   // Refund token on rate limit
                   if (tokenConsumed) {
                     getTokenTracker().refund(account.index);
@@ -1459,7 +1488,8 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   await logResponseBody(debugContext, response, response.status);
                 }
 
-                if (shouldRetryEndpoint && i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
+                if (shouldRetryEndpoint && i < endpointFallbacks.length - 1) {
+                  clearPreferredEndpoint(headerStyle, currentEndpoint);
                   lastFailure = {
                     response,
                     streaming: prepared.streaming,
@@ -1476,8 +1506,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   continue;
                 }
 
+
                 // Success or non-retryable error - return the response
                 if (response.ok) {
+                  markPreferredEndpoint(headerStyle, currentEndpoint);
                   account.consecutiveFailures = 0;
                   getHealthTracker().recordSuccess(account.index);
                 }
@@ -1613,7 +1645,8 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   });
                 }
 
-                if (i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
+                if (i < endpointFallbacks.length - 1) {
+                  clearPreferredEndpoint(headerStyle, currentEndpoint);
                   lastError = error instanceof Error ? error : new Error(String(error));
                   continue;
                 }

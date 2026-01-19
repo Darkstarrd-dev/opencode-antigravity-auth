@@ -35,12 +35,12 @@ export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX = "https://daily-cloudcode-pa.googleapis.com";
 
 /**
- * Endpoint fallback order (daily-non-sandbox → prod → daily → autopush).
- * Shared across request handling and project discovery to mirror CLIProxy behavior.
+ * 端点 fallback 顺序（prod → daily-non-sandbox → daily → autopush）。
+ * 优先使用生产端点以避免沙箱额度误判。
  */
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
-  ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX,
   ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX,
   ANTIGRAVITY_ENDPOINT_DAILY,
   ANTIGRAVITY_ENDPOINT_AUTOPUSH,
 ] as const;
@@ -56,9 +56,9 @@ export const ANTIGRAVITY_LOAD_ENDPOINTS = [
 ] as const;
 
 /**
- * Primary endpoint to use (daily sandbox - same as CLIProxy/Vibeproxy).
+ * 主端点：优先使用生产环境以避免沙箱额度误判。
  */
-export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_DAILY;
+export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
 
 /**
  * Gemini CLI endpoint (production).
