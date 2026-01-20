@@ -14,9 +14,7 @@ const projectContextResultCache = new Map<string, ProjectContextResult>();
 const projectContextPendingCache = new Map<string, Promise<ProjectContextResult>>();
 
 const CODE_ASSIST_METADATA = {
-  ideType: "IDE_UNSPECIFIED",
-  platform: "PLATFORM_UNSPECIFIED",
-  pluginType: "GEMINI",
+  ideType: "ANTIGRAVITY",
 } as const;
 
 interface AntigravityUserTier {
@@ -45,8 +43,6 @@ interface OnboardUserPayload {
 function buildMetadata(projectId?: string): Record<string, string> {
   const metadata: Record<string, string> = {
     ideType: CODE_ASSIST_METADATA.ideType,
-    platform: CODE_ASSIST_METADATA.platform,
-    pluginType: CODE_ASSIST_METADATA.pluginType,
   };
   if (projectId) {
     metadata.duetProject = projectId;
@@ -128,9 +124,7 @@ export async function loadManagedProject(
   const loadHeaders: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${accessToken}`,
-    "User-Agent": "google-api-nodejs-client/9.15.1",
-    "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-    "Client-Metadata": ANTIGRAVITY_HEADERS["Client-Metadata"],
+    "User-Agent": ANTIGRAVITY_HEADERS["User-Agent"],
   };
 
   const loadEndpoints = Array.from(

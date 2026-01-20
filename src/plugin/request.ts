@@ -1362,8 +1362,13 @@ export function prepareAntigravityRequest(
 
   const selectedHeaders = headerStyle === "gemini-cli" ? GEMINI_CLI_HEADERS : ANTIGRAVITY_HEADERS;
   headers.set("User-Agent", selectedHeaders["User-Agent"]);
-  headers.set("X-Goog-Api-Client", selectedHeaders["X-Goog-Api-Client"]);
-  headers.set("Client-Metadata", selectedHeaders["Client-Metadata"]);
+  
+  if ("X-Goog-Api-Client" in selectedHeaders) {
+    headers.set("X-Goog-Api-Client", (selectedHeaders as any)["X-Goog-Api-Client"]);
+  }
+  if ("Client-Metadata" in selectedHeaders) {
+    headers.set("Client-Metadata", (selectedHeaders as any)["Client-Metadata"]);
+  }
   // Optional debug header to observe tool normalization on the backend if surfaced
   if (toolDebugMissing > 0) {
     headers.set("X-Opencode-Tools-Debug", String(toolDebugMissing));

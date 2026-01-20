@@ -133,9 +133,8 @@ async function fetchProjectID(accessToken: string): Promise<string> {
   const loadHeaders: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
-    "User-Agent": "google-api-nodejs-client/9.15.1",
-    "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-    "Client-Metadata": ANTIGRAVITY_HEADERS["Client-Metadata"],
+    "User-Agent": ANTIGRAVITY_HEADERS["User-Agent"],
+    Host: "cloudcode-pa.googleapis.com",
   };
 
   const loadEndpoints = Array.from(
@@ -150,9 +149,7 @@ async function fetchProjectID(accessToken: string): Promise<string> {
         headers: loadHeaders,
         body: JSON.stringify({
           metadata: {
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI",
+            ideType: "ANTIGRAVITY",
           },
         }),
       });
