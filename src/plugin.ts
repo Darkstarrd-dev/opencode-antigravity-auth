@@ -42,6 +42,7 @@ import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
 import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
+import { executeSearch } from "./plugin/search";
 import { executeImageGeneration } from "./plugin/image";
 import type {
   GetAuth,
@@ -64,37 +65,7 @@ function getCapacityBackoffDelay(consecutiveFailures: number): number {
 const warmupAttemptedSessionIds = new Set<string>();
 const warmupSucceededSessionIds = new Set<string>();
 
-// 记录当前会话可用的端点，避免每次全量遍历
-const preferredEndpointByHeaderStyle: Partial<Record<HeaderStyle, string>> = {};
-
 const log = createLogger("plugin");
-
-function buildEndpointFallbacks(headerStyle: HeaderStyle): string[] {
-  // 必须显式断言为 string[] 避免 TS 推断为 readonly tuple 或联合类型数组导致的 indexOf 参数不兼容
-  const endpoints: string[] = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
-  const preferred = preferredEndpointByHeaderStyle[headerStyle];
-  if (!preferred) {
-    return endpoints;
-  }
-  const index = endpoints.indexOf(preferred);
-  if (index > 0) {
-    endpoints.splice(index, 1);
-    endpoints.unshift(preferred);
-  }
-  return endpoints;
-}
-
-function markPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string | undefined): void {
-  if (endpoint) {
-    preferredEndpointByHeaderStyle[headerStyle] = endpoint;
-  }
-}
-
-function clearPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string | undefined): void {
-  if (endpoint && preferredEndpointByHeaderStyle[headerStyle] === endpoint) {
-    delete preferredEndpointByHeaderStyle[headerStyle];
-  }
-}
 
 // Module-level toast debounce to persist across requests (fixes toast spam)
 const rateLimitToastCooldowns = new Map<string, number>();
@@ -759,6 +730,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
   const config = loadConfig(directory);
   initRuntimeConfig(config);
 
+  // Cached getAuth function for tool access
+  let cachedGetAuth: GetAuth | null = null;
+  
   // Initialize debug with config
   initializeDebug(config);
   
@@ -800,9 +774,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
     showStartupToast: true,
     autoUpdate: config.auto_update,
   });
-
-  // Add authentication cache variable for tools
-  let cachedGetAuth: (() => Promise<{ accessToken: string; projectId: string }>) | null = null;
 
   // Event handler for session recovery and updates
   const eventHandler = async (input: { event: { type: string; properties?: unknown } }) => {
@@ -851,11 +822,126 @@ export const createAntigravityPlugin = (providerId: string) => async (
     }
   };
 
+  // Create google_search tool with access to auth context
+  const googleSearchTool = tool({
+    description: "Search the web using Google Search and analyze URLs. Returns real-time information from the internet with source citations. Use this when you need up-to-date information about current events, recent developments, or any topic that may have changed. You can also provide specific URLs to analyze. IMPORTANT: If the user mentions or provides any URLs in their query, you MUST extract those URLs and pass them in the 'urls' parameter for direct analysis.",
+    args: {
+      query: tool.schema.string().describe("The search query or question to answer using web search"),
+      urls: tool.schema.array(tool.schema.string()).optional().describe("List of specific URLs to fetch and analyze. IMPORTANT: Always extract and include any URLs mentioned by the user in their query here."),
+      thinking: tool.schema.boolean().optional().default(true).describe("Enable deep thinking for more thorough analysis (default: true)"),
+    },
+    async execute(args, ctx) {
+      log.debug("Google Search tool called", { query: args.query, urlCount: args.urls?.length ?? 0 });
+
+      // Get current auth context
+      const auth = cachedGetAuth ? await cachedGetAuth() : null;
+      if (!auth || !isOAuthAuth(auth)) {
+        return "Error: Not authenticated with Antigravity. Please run `opencode auth login` to authenticate.";
+      }
+
+      // Get access token and project ID
+      const parts = parseRefreshParts(auth.refresh);
+      const projectId = parts.managedProjectId || parts.projectId || "unknown";
+
+      // Ensure we have a valid access token
+      let accessToken = auth.access;
+      if (!accessToken || accessTokenExpired(auth)) {
+        try {
+          const refreshed = await refreshAccessToken(auth, client, providerId);
+          accessToken = refreshed?.access;
+        } catch (error) {
+          return `Error: Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      if (!accessToken) {
+        return "Error: No valid access token available. Please run `opencode auth login` to re-authenticate.";
+      }
+
+      return executeSearch(
+        {
+          query: args.query,
+          urls: args.urls,
+          thinking: args.thinking,
+        },
+        accessToken,
+        projectId,
+        ctx.abort,
+      );
+    },
+  });
+
+  const generateImageTool = tool({
+    description: "Generate images from text descriptions using Gemini's image generation model. Use this tool when the user explicitly asks to generate, create, draw, or make an image, picture, illustration, chart, diagram, or artwork. Images are automatically saved to the imgs/ directory in the workspace.",
+    args: {
+      prompt: tool.schema.string().describe("Detailed description of the image to generate. Be specific about style, composition, colors, and content."),
+      aspect_ratio: tool.schema.string().optional().default("1:1").describe("Aspect ratio of the image. Supported values: '1:1', '16:9', '9:16', '4:3', '3:4', '21:9'. Aliases: 'square', 'landscape', 'portrait', 'wide'."),
+      quality: tool.schema.string().optional().default("standard").describe("Image quality: 'standard' for normal resolution, 'hd' for 4K high-resolution output."),
+      reference_images: tool.schema.array(tool.schema.string()).optional().describe("Optional list of absolute file paths to reference images for image-to-image generation."),
+    },
+    async execute(args, ctx) {
+      log.debug("generate_image tool called", { promptLength: args.prompt?.length ?? 0 });
+
+      const auth = cachedGetAuth ? await cachedGetAuth() : null;
+      if (!auth || !isOAuthAuth(auth)) {
+        return "Error: Not authenticated with Antigravity. Please run `opencode auth login` to authenticate.";
+      }
+
+      let authRecord = auth;
+      if (accessTokenExpired(authRecord)) {
+        try {
+          const refreshed = await refreshAccessToken(authRecord, client, providerId);
+          if (!refreshed) {
+            return "Error: Failed to refresh access token.";
+          }
+          authRecord = refreshed;
+        } catch (error) {
+          return `Error: Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      if (!authRecord.access) {
+        return "Error: No valid access token available. Please run `opencode auth login` to re-authenticate.";
+      }
+
+      let projectId = "unknown";
+      const refreshParts = parseRefreshParts(authRecord.refresh);
+      projectId = refreshParts.managedProjectId || refreshParts.projectId || projectId;
+
+      try {
+        const projectContext = await ensureProjectContext(authRecord);
+        projectId = projectContext.effectiveProjectId;
+      } catch (error) {
+        log.debug("Failed to resolve project context", { error: String(error) });
+      }
+
+      return executeImageGeneration(
+        {
+          prompt: args.prompt,
+          aspect_ratio: args.aspect_ratio,
+          quality: args.quality,
+          imagePaths: args.reference_images,
+        },
+        authRecord.access,
+        projectId,
+        directory,
+        ctx.abort,
+      );
+    },
+  });
+
   return {
     event: eventHandler,
+    tool: {
+      google_search: googleSearchTool,
+      generate_image: generateImageTool,
+    },
     auth: {
     provider: providerId,
     loader: async (getAuth: GetAuth, provider: Provider): Promise<LoaderResult | Record<string, unknown>> => {
+      // Cache getAuth for tool access
+      cachedGetAuth = getAuth;
+
       const auth = await getAuth();
       
       // If OpenCode has no valid OAuth auth, clear any stale account storage
@@ -879,49 +965,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
       if (accountManager.getAccountCount() > 0) {
         accountManager.requestSaveToDisk();
       }
-
-      // Set up cachedGetAuth for tools
-      cachedGetAuth = async () => {
-        const latestAuth = await getAuth();
-        if (!isOAuthAuth(latestAuth)) {
-          throw new Error("No valid OAuth auth");
-        }
-
-        const account = accountManager.getCurrentOrNextForFamily(
-          "gemini",
-          null,
-          config.account_selection_strategy,
-          "antigravity",
-          config.pid_offset_enabled,
-        );
-
-        if (!account) {
-          throw new Error("No available account");
-        }
-
-        let authRecord = accountManager.toAuthDetails(account);
-
-        // Refresh token if expired
-        if (accessTokenExpired(authRecord)) {
-          const refreshed = await refreshAccessToken(authRecord, client, providerId);
-          if (!refreshed) {
-            throw new Error("Token refresh failed");
-          }
-          authRecord = refreshed;
-          accountManager.updateFromAuth(account, refreshed);
-        }
-
-        const projectContext = await ensureProjectContext(authRecord);
-
-        if (!authRecord.access) {
-          throw new Error("Access token is missing after refresh");
-        }
-
-        return {
-          accessToken: authRecord.access,
-          projectId: projectContext.effectiveProjectId,
-        };
-      };
 
       // Initialize proactive token refresh queue (ported from LLM-API-Key-Proxy)
       let refreshQueue: ProactiveRefreshQueue | null = null;
@@ -1349,20 +1392,18 @@ export const createAntigravityPlugin = (providerId: string) => async (
             // Track if token was consumed (for hybrid strategy refund on error)
             let tokenConsumed = false;
             
-            const endpointFallbacks = buildEndpointFallbacks(headerStyle);
-
             // Track capacity retries per endpoint to prevent infinite loops
             let capacityRetryCount = 0;
             let lastEndpointIndex = -1;
-
-            for (let i = 0; i < endpointFallbacks.length; i++) {
+            
+            for (let i = 0; i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length; i++) {
               // Reset capacity retry counter when switching to a new endpoint
               if (i !== lastEndpointIndex) {
                 capacityRetryCount = 0;
                 lastEndpointIndex = i;
               }
 
-              const currentEndpoint = endpointFallbacks[i];
+              const currentEndpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[i];
 
               try {
                 const prepared = prepareAntigravityRequest(
@@ -1416,7 +1457,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                 // Handle 429 rate limit (or Service Overloaded) with improved logic
                 if (response.status === 429 || response.status === 503 || response.status === 529) {
-                  clearPreferredEndpoint(headerStyle, currentEndpoint);
                   // Refund token on rate limit
                   if (tokenConsumed) {
                     getTokenTracker().refund(account.index);
@@ -1427,19 +1467,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   const maxBackoffMs = (config.max_backoff_seconds ?? 60) * 1000;
                   const headerRetryMs = retryAfterMsFromResponse(response, defaultRetryMs);
                   const bodyInfo = await extractRetryInfoFromBody(response);
-                  let serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
-
-                  // If the body provides an absolute reset timestamp but not a delay,
-                  // prefer the precise lockout window.
-                  if ((bodyInfo.retryDelayMs === null || bodyInfo.retryDelayMs === undefined) && bodyInfo.quotaResetTime) {
-                    const ts = Date.parse(bodyInfo.quotaResetTime);
-                    if (Number.isFinite(ts)) {
-                      const untilMs = ts - Date.now();
-                      if (Number.isFinite(untilMs) && untilMs > 0) {
-                        serverRetryMs = Math.max(untilMs, 2000);
-                      }
-                    }
-                  }
+                  const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
 
                   // [Enhanced Parsing] Pass status to handling logic
                   const rateLimitReason = parseRateLimitReason(bodyInfo.reason, bodyInfo.message, response.status);
@@ -1656,8 +1684,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   await logResponseBody(debugContext, response, response.status);
                 }
 
-                if (shouldRetryEndpoint && i < endpointFallbacks.length - 1) {
-                  clearPreferredEndpoint(headerStyle, currentEndpoint);
+                if (shouldRetryEndpoint && i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
                   lastFailure = {
                     response,
                     streaming: prepared.streaming,
@@ -1674,11 +1701,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   continue;
                 }
 
-
                 // Success or non-retryable error - return the response
                 if (response.ok) {
-                  markPreferredEndpoint(headerStyle, currentEndpoint);
-                  accountManager.markRequestSuccess(account, family, headerStyle, model);
+                  account.consecutiveFailures = 0;
                   getHealthTracker().recordSuccess(account.index);
                   accountManager.markAccountUsed(account.index);
                 }
@@ -1812,8 +1837,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   });
                 }
 
-                if (i < endpointFallbacks.length - 1) {
-                  clearPreferredEndpoint(headerStyle, currentEndpoint);
+                if (i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
                   lastError = error instanceof Error ? error : new Error(String(error));
                   continue;
                 }
@@ -2396,36 +2420,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
         type: "api",
       },
     ],
-  },
-  
-  tool: {
-    generate_image: tool({
-      description: `Generate images from text descriptions using Gemini's image generation model. Use this tool when the user explicitly asks to generate, create, draw, or make an image, picture, illustration, chart, diagram, or artwork. Examples of triggers: '生成一张xxx的图片', '画一张xxx', '做一个xxx的图表', '创建xxx的插图', 'generate an image of...', 'draw a picture of...', 'create an illustration of...'. Images are automatically saved to the imgs/ directory in the workspace.`,
-      args: {
-        prompt: tool.schema.string().describe("Detailed description of the image to generate. Be specific about style, composition, colors, and content."),
-        aspect_ratio: tool.schema.string().optional().default("1:1").describe("Aspect ratio of the image. Supported values: '1:1' (square), '16:9' (landscape/widescreen), '9:16' (portrait/vertical), '4:3', '3:4', '21:9' (ultrawide). Aliases: 'square', 'landscape', 'portrait', 'wide'."),
-        quality: tool.schema.string().optional().default("standard").describe("Image quality: 'standard' for normal resolution, 'hd' for 4K high-resolution output."),
-        reference_images: tool.schema.array(tool.schema.string()).optional().describe("Optional list of absolute file paths to reference images for image-to-image generation. Use this when the user wants to modify or use an existing image as a base."),
-      },
-      async execute(args, ctx) {
-        if (!cachedGetAuth) {
-          throw new Error("Auth not initialized");
-        }
-        const authContext = await cachedGetAuth();
-        return executeImageGeneration(
-          {
-            prompt: args.prompt,
-            aspect_ratio: args.aspect_ratio,
-            quality: args.quality,
-            imagePaths: args.reference_images,
-          },
-          authContext.accessToken,
-          authContext.projectId,
-          directory,
-          ctx.abort,
-        );
-      },
-    }),
   },
   };
 };

@@ -62,7 +62,7 @@ https://www.googleapis.com/auth/experimentsandconfigs
 ```http
 Authorization: Bearer {access_token}
 Content-Type: application/json
-User-Agent: antigravity/1.11.5 windows/amd64
+User-Agent: antigravity/1.15.8 windows/amd64
 X-Goog-Api-Client: google-cloud-sdk vscode_cloudshelleditor/0.1
 Client-Metadata: {"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}
 ```
@@ -207,6 +207,82 @@ Accept: text/event-stream
 }
 ```
 
+
+### Google Search Grounding
+
+Gemini models support Google Search grounding, but **it cannot be combined with function declarations** in the same request. This plugin implements a dedicated `google_search` tool that makes separate API calls.
+
+#### How the `google_search` Tool Works
+
+The model can call `google_search(query, urls?, thinking?)` which:
+1. Makes a **separate API call** to Antigravity with only `{ googleSearch: {} }` (no function declarations)
+2. Parses the `groundingMetadata` from the response
+3. Returns formatted markdown with sources and citations
+
+**Tool Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | ✅ | The search query or question |
+| `urls` | string[] | ❌ | URLs to analyze (adds `urlContext` tool) |
+| `thinking` | boolean | ❌ | Enable deep thinking (default: true) |
+
+**Example Response:**
+```markdown
+## Search Results
+
+Spain won Euro 2024, defeating England 2-1 in the final...
+
+### Sources
+- [UEFA Euro 2024](https://uefa.com/...)
+- [Al Jazeera](https://aljazeera.com/...)
+
+### Search Queries Used
+- "UEFA Euro 2024 winner"
+```
+
+#### Raw API Format (for reference)
+
+The underlying API uses these tool formats:
+
+**New API (Gemini 2.0+ / Gemini 3):**
+```json
+{
+  "tools": [
+    { "googleSearch": {} }
+  ]
+}
+```
+
+**Legacy API (Gemini 1.5 only - deprecated):**
+```json
+{
+  "tools": [
+    {
+      "googleSearchRetrieval": {
+        "dynamicRetrievalConfig": {
+          "mode": "MODE_DYNAMIC",
+          "dynamicThreshold": 0.3
+        }
+      }
+    }
+  ]
+}
+```
+
+**Response includes `groundingMetadata`:**
+```json
+{
+  "groundingMetadata": {
+    "webSearchQueries": ["query1", "query2"],
+    "searchEntryPoint": { "renderedContent": "..." },
+    "groundingChunks": [{ "web": { "uri": "...", "title": "..." } }],
+    "groundingSupports": [{ "segment": {...}, "groundingChunkIndices": [...] }]
+  }
+}
+```
+
+> **Important:** `googleSearch` and `urlContext` tools **cannot be combined with `functionDeclarations`** in the same request. This is why the plugin uses a separate API call.
+```
 
 ### Function Name Rules
 

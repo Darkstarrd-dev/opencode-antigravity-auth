@@ -151,7 +151,9 @@ async function fetchProjectID(accessToken: string): Promise<string> {
         headers: loadHeaders,
         body: JSON.stringify({
           metadata: {
-            ideType: "ANTIGRAVITY",
+            ideType: "IDE_UNSPECIFIED",
+            platform: "PLATFORM_UNSPECIFIED",
+            pluginType: "GEMINI",
           },
         }),
       });

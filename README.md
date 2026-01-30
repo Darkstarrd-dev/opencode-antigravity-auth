@@ -13,7 +13,7 @@
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` Tool (Native Implementation + Img2Img)                        | Native Implementation                                                                                     |
 >
-> **Status:** Version 1.4.2 - Aligned endpoint headers and metadata with reference implementation.
+> **Status:** Version 1.4.3 - Aligned endpoint headers and metadata with reference implementation.
 
 ---
 
@@ -69,7 +69,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.2"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.3"]
    }
    ```
 
@@ -120,7 +120,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.2"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.3"],
   "provider": {
     "google": {
       "models": {
@@ -319,7 +319,7 @@ MIT
 > | 双配额系统、多账号轮换、会话恢复、思考过程恢复 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` 工具 (原生实现 + 图生图)                                  | 原生实现                                                                                     |
 >
-> **状态:** 版本 1.4.2 - 对齐了端点请求头和元数据实现。
+> **状态:** 版本 1.4.3 - 对齐了端点请求头和元数据实现。
 
 ---
 
@@ -352,7 +352,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.2"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.3"]
    }
    ```
 
@@ -403,7 +403,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.2"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.3"],
   "provider": {
     "google": {
       "models": {
@@ -775,7 +775,6 @@ Most users don't need to configure anything — defaults work well.
 |--------|---------|--------------
 | `keep_thinking` | `false` | Preserve Claude's thinking across turns. **Warning:** enabling may degrade model stability. |
 | `session_recovery` | `true` | Auto-recover from tool errors |
-| `web_search.default_mode` | `"off"` | Gemini Google Search: `"auto"` or `"off"` |
 
 ### Account Rotation
 

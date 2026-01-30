@@ -4,9 +4,26 @@ import type { OAuthAuthDetails, RefreshParts } from "./types";
 import type { AccountSelectionStrategy } from "./config/schema";
 import { getHealthTracker, getTokenTracker, selectHybridAccount, type AccountWithMetrics } from "./rotation";
 import { generateFingerprint, type Fingerprint, type FingerprintVersion, MAX_FINGERPRINT_HISTORY } from "./fingerprint";
+import { ANTIGRAVITY_VERSION } from "../constants";
 
 export type { ModelFamily, HeaderStyle, CooldownReason } from "./storage";
 export type { AccountSelectionStrategy } from "./config/schema";
+
+/**
+ * Update fingerprint userAgent to current version if outdated.
+ * Extracts platform/arch from existing userAgent and rebuilds with current version.
+ */
+function updateFingerprintVersion(fingerprint: Fingerprint): Fingerprint {
+  const match = fingerprint.userAgent.match(/^antigravity\/[\d.]+ (.+)$/);
+  if (match) {
+    const platformArch = match[1];
+    const expectedUserAgent = `antigravity/${ANTIGRAVITY_VERSION} ${platformArch}`;
+    if (fingerprint.userAgent !== expectedUserAgent) {
+      return { ...fingerprint, userAgent: expectedUserAgent };
+    }
+  }
+  return fingerprint;
+}
 
 export type RateLimitReason = 
   | "QUOTA_EXHAUSTED"
@@ -164,21 +181,6 @@ function getQuotaKey(family: ModelFamily, headerStyle: HeaderStyle, model?: stri
   return base;
 }
 
-function getRateLimitStorageKey(
-  family: ModelFamily,
-  headerStyle: HeaderStyle,
-  model: string | null | undefined,
-  reason: RateLimitReason,
-): QuotaKey {
-  // Keep model-level isolation ONLY for long-lived quota exhaustion.
-  // For RPM/TPM throttles, capacity, and generic errors, we lock at the quota-pool level
-  // to avoid poisoning the pool with per-model locks (matches Antigravity-Manager behavior).
-  if (family !== "claude" && reason === "QUOTA_EXHAUSTED" && model) {
-    return getQuotaKey(family, headerStyle, model);
-  }
-  return getQuotaKey(family, headerStyle);
-}
-
 function isRateLimitedForQuotaKey(account: ManagedAccount, key: QuotaKey): boolean {
   const resetTime = account.rateLimitResetTimes[key];
   return resetTime !== undefined && nowMs() < resetTime;
@@ -299,8 +301,10 @@ export class AccountManager {
             coolingDownUntil: acc.coolingDownUntil,
             cooldownReason: acc.cooldownReason,
             touchedForQuota: {},
-            // Use stored fingerprint or generate new one for rate limit mitigation
-            fingerprint: acc.fingerprint ?? generateFingerprint(),
+            // Use stored fingerprint (with updated version) or generate new one
+            fingerprint: acc.fingerprint
+              ? updateFingerprintVersion(acc.fingerprint)
+              : generateFingerprint(),
           };
         })
         .filter((a): a is ManagedAccount => a !== null);
@@ -560,37 +564,15 @@ export class AccountManager {
     account.lastFailureTime = now;
     
     const backoffMs = calculateBackoffMs(reason, failures - 1, retryAfterMs);
-    const key = getRateLimitStorageKey(family, headerStyle, model, reason);
+    const key = getQuotaKey(family, headerStyle, model);
     account.rateLimitResetTimes[key] = now + backoffMs;
     
     return backoffMs;
   }
 
-  markRequestSuccess(
-    account: ManagedAccount,
-    family?: ModelFamily,
-    headerStyle?: HeaderStyle,
-    model?: string | null,
-  ): void {
-    account.consecutiveFailures = 0;
-
-    if (!family || !headerStyle) {
-      return;
-    }
-
-    // Success implies this account is currently usable; clear any stale locks for the
-    // quota pool we just succeeded on, so we don't keep rotating on a recovered account.
-    if (family === "claude") {
-      delete account.rateLimitResetTimes.claude;
-      return;
-    }
-
-    const baseKey = getQuotaKey(family, headerStyle);
-    delete account.rateLimitResetTimes[baseKey];
-
-    if (model) {
-      const modelKey = getQuotaKey(family, headerStyle, model);
-      delete account.rateLimitResetTimes[modelKey];
+  markRequestSuccess(account: ManagedAccount): void {
+    if (account.consecutiveFailures) {
+      account.consecutiveFailures = 0;
     }
   }
 

@@ -12,13 +12,18 @@ import {
   SAFETY_SETTINGS_OFF,
 } from "../constants";
 import { createLogger } from "./logger";
-import { generateRequestId } from "./request-helpers";
 
 const log = createLogger("image");
 
 // Track the last successfully used endpoint to prioritize it in future requests
 type AntigravityEndpoint = typeof ANTIGRAVITY_ENDPOINT_FALLBACKS[number];
 let _preferredEndpoint: AntigravityEndpoint | null = null;
+
+function generateRequestId(): string {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `req_${timestamp}_${randomPart}`;
+}
 
 /**
  * Arguments for image generation.
@@ -106,7 +111,7 @@ function appendToListMd(
 ): void {
   const listPath = join(imgsDir, "list.md");
   const timestamp = new Date().toISOString();
-  
+
   let entry: string;
   if (success) {
     entry = `
@@ -156,7 +161,7 @@ async function saveImageToFile(
   try {
     const imgsDir = ensureImgsDirectory(workingDirectory);
     const timestamp = generateTimestamp();
-    
+
     // Determine file extension from mimeType
     const ext = mimeType === "image/png" ? "png" : "jpg";
     const filename = `${timestamp}.${ext}`;
@@ -170,7 +175,7 @@ async function saveImageToFile(
     // Convert to webp with 75% quality
     const webpFilename = `${timestamp}.webp`;
     const webpPath = join(imgsDir, webpFilename);
-    
+
     await sharp(buffer)
       .webp({ quality: 75 })
       .toFile(webpPath);
@@ -183,7 +188,7 @@ async function saveImageToFile(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.debug("Failed to save image", { error: message });
-    
+
     // Try to append failure to list.md
     try {
       const imgsDir = ensureImgsDirectory(workingDirectory);
@@ -191,7 +196,7 @@ async function saveImageToFile(
     } catch {
       // Ignore if we can't write to list.md
     }
-    
+
     return { success: false, error: message };
   }
 }
@@ -344,7 +349,7 @@ export async function parseImageResponse(
   if (data.error) {
     const errorMessage = data.error.message ?? "Unknown error";
     log.debug("Image generation API error", { error: data.error });
-    
+
     // Log failure to list.md
     try {
       const imgsDir = ensureImgsDirectory(workingDirectory);
@@ -352,21 +357,21 @@ export async function parseImageResponse(
     } catch {
       // Ignore
     }
-    
+
     return `Error: Image generation failed - ${errorMessage}`;
   }
 
   const response = data.response;
   if (!response || !response.candidates || response.candidates.length === 0) {
     log.debug("No candidates in response");
-    
+
     try {
       const imgsDir = ensureImgsDirectory(workingDirectory);
       appendToListMd(imgsDir, "", requestPayload, false, "No candidates in response");
     } catch {
       // Ignore
     }
-    
+
     return "Error: No image was generated. Please try a different prompt.";
   }
 
@@ -378,7 +383,7 @@ export async function parseImageResponse(
   // Check for finish reason issues
   if (candidate.finishReason && candidate.finishReason !== "STOP") {
     log.debug("Non-STOP finish reason", { finishReason: candidate.finishReason });
-    
+
     let errorMsg = "";
     if (candidate.finishReason === "SAFETY") {
       errorMsg = "Image generation was blocked due to safety filters.";
@@ -387,14 +392,14 @@ export async function parseImageResponse(
     } else {
       errorMsg = `Unexpected finish reason: ${candidate.finishReason}`;
     }
-    
+
     try {
       const imgsDir = ensureImgsDirectory(workingDirectory);
       appendToListMd(imgsDir, "", requestPayload, false, errorMsg);
     } catch {
       // Ignore
     }
-    
+
     return `Error: ${errorMsg} Please try a different prompt.`;
   }
 
@@ -486,7 +491,7 @@ export async function executeImageGeneration(
           let mimeType = "image/jpeg";
           if (ext === "png") mimeType = "image/png";
           if (ext === "webp") mimeType = "image/webp";
-          
+
           processedImages.push({
             data: buffer.toString("base64"),
             mimeType,
@@ -545,10 +550,10 @@ export async function executeImageGeneration(
   // Try all endpoints in fallback order
   for (const endpoint of endpointsToTry) {
     const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
-    
+
     try {
       log.debug("Attempting image generation", { endpoint, url });
-      
+
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -634,11 +639,11 @@ export async function executeImageGeneration(
       const message = error instanceof Error ? error.message : String(error);
       log.debug("Fetch error", { endpoint, error: message });
       lastError = message;
-      
+
       if (message.includes("aborted") || message.includes("Aborted")) {
         return "Error: Image generation was cancelled.";
       }
-      
+
       // Try next endpoint on network errors
       continue;
     }
@@ -646,11 +651,11 @@ export async function executeImageGeneration(
 
   // If we get here, all endpoints failed
   const errorMessage = lastError ?? "All endpoints failed";
-  
+
   // Check if this is a 403 error and provide fallback guidance
   if (lastError && lastError.includes("403")) {
     log.debug("Primary image generation failed with 403, attempting fallback");
-    
+
     // Simplified fallback: prompt user to use model name trigger
     return `**Image Generation Fallback**
 
@@ -661,11 +666,11 @@ Primary tool failed with 403 License error. Please try using the model directly:
 3. Aspect ratio will use default (1:1) or set \`OPENCODE_IMAGE_ASPECT_RATIO\` environment variable
 
 **Technical Details:**
-- Primary endpoint: Fork implementation (tool-based)
-- Fallback: Source implementation (model-based)
+- Primary endpoint: tool-based request
+- Fallback: model-based request
 - Last error: ${lastError}`;
   }
-  
+
   // Log final failure
   try {
     const imgsDir = ensureImgsDirectory(workingDirectory);

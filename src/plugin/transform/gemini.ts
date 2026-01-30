@@ -464,9 +464,9 @@ function isWebSearchTool(tool: Record<string, unknown>): boolean {
     return true;
   }
 
-  // 3. Simple name-based format: { name: "web_search" }
+  // 3. Simple name-based format: { name: "web_search" | "google_search" }
   const name = tool.name as string | undefined;
-  if (name === "web_search") {
+  if (name === "web_search" || name === "google_search") {
     return true;
   }
 
@@ -566,7 +566,7 @@ export function wrapToolsAsFunctionDeclarations(payload: RequestPayload): WrapTo
     // Log warning: web search requested but can't be used with functions
     console.warn(
       "[gemini] web_search tool detected but cannot be combined with function declarations. " +
-      "Use the explicit web_search tool call instead."
+      "Use the explicit google_search() tool call instead."
     );
   }
 

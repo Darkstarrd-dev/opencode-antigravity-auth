@@ -1,18 +1,5 @@
 # Changelog
 
-## [1.4.2] - 2026-01-30
-
-### Fixed
-
-- **兼容性修正** (Compatibility fix)
-
-## [1.4.1] - 2026-01-30
-
-### Changed
-
-- **Restrict Antigravity fingerprints to 1.15.8** - Avoids "This version of Antigravity is no longer supported" errors by locking the version list to 1.15.8 ([#324](https://github.com/NoeFabris/opencode-antigravity-auth/issues/324))
-- **Remove google_search tool** - The dedicated web search tool is no longer exposed by the plugin
-
 ## [1.3.2] - 2026-01-27
 
 ### Added

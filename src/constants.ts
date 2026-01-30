@@ -32,17 +32,15 @@ export const ANTIGRAVITY_REDIRECT_URI = "http://localhost:51121/oauth-callback";
 export const ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
-export const ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX = "https://daily-cloudcode-pa.googleapis.com";
 
 /**
- * 端点 fallback 顺序（prod → daily-non-sandbox → daily → autopush）。
- * 优先使用生产端点以避免沙箱额度误判。
+ * Endpoint fallback order (daily → autopush → prod).
+ * Shared across request handling and project discovery to mirror CLIProxy behavior.
  */
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
-  ANTIGRAVITY_ENDPOINT_PROD,
-  ANTIGRAVITY_ENDPOINT_DAILY_NON_SANDBOX,
   ANTIGRAVITY_ENDPOINT_DAILY,
   ANTIGRAVITY_ENDPOINT_AUTOPUSH,
+  ANTIGRAVITY_ENDPOINT_PROD,
 ] as const;
 
 /**
@@ -56,9 +54,9 @@ export const ANTIGRAVITY_LOAD_ENDPOINTS = [
 ] as const;
 
 /**
- * 主端点：优先使用生产环境以避免沙箱额度误判。
+ * Primary endpoint to use (daily sandbox - same as CLIProxy/Vibeproxy).
  */
-export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
+export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_DAILY;
 
 /**
  * Gemini CLI endpoint (production).
@@ -84,13 +82,17 @@ export const GEMINI_CLI_HEADERS = {
   "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 } as const;
 
-const ANTIGRAVITY_USER_AGENTS = [
-  "antigravity/1.15.8 windows/amd64",
-  "antigravity/1.15.8 darwin/arm64",
-  "antigravity/1.15.8 linux/amd64",
-  "antigravity/1.15.8 darwin/amd64",
-  "antigravity/1.15.8 linux/arm64",
-] as const;
+/**
+ * Antigravity version string - SINGLE SOURCE OF TRUTH.
+ * Update this value when a new version is needed.
+ * Used by both constants.ts and fingerprint.ts
+ */
+export const ANTIGRAVITY_VERSION = "1.15.8" as const;
+
+const ANTIGRAVITY_PLATFORMS = ["windows/amd64", "darwin/arm64", "linux/amd64", "darwin/amd64", "linux/arm64"] as const;
+
+// Derive user agents from version (keeps them in sync automatically)
+const ANTIGRAVITY_USER_AGENTS = ANTIGRAVITY_PLATFORMS.map(platform => `antigravity/${ANTIGRAVITY_VERSION} ${platform}`);
 
 const ANTIGRAVITY_API_CLIENTS = [
   "google-cloud-sdk vscode_cloudshelleditor/0.1",
@@ -201,13 +203,47 @@ export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
  * This is injected into requests to match CLIProxyAPI v6.6.89 behavior.
  * The instruction provides identity and guidelines for the Antigravity agent.
  */
-export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
-You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
-**Absolute paths only**
-**Proactiveness**
+// ============================================================================
+// GOOGLE SEARCH TOOL CONSTANTS
+// ============================================================================
 
-<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
-`;
+/**
+ * Model used for Google Search grounding requests.
+ * Uses gemini-3-flash for fast, cost-effective search operations.
+ */
+export const SEARCH_MODEL = "gemini-3-flash";
+
+/**
+ * Thinking budget for deep search (more thorough analysis).
+ */
+export const SEARCH_THINKING_BUDGET_DEEP = 16384;
+
+/**
+ * Thinking budget for fast search (quick results).
+ */
+export const SEARCH_THINKING_BUDGET_FAST = 4096;
+
+/**
+ * Timeout for search requests in milliseconds (60 seconds).
+ */
+export const SEARCH_TIMEOUT_MS = 60000;
+
+/**
+ * System instruction for the Google Search tool.
+ */
+export const SEARCH_SYSTEM_INSTRUCTION = `You are an expert web search assistant with access to Google Search and URL analysis tools.
+
+Your capabilities:
+- Use google_search to find real-time information from the web
+- Use url_context to fetch and analyze content from specific URLs when provided
+
+Guidelines:
+- Always provide accurate, well-sourced information
+- Cite your sources when presenting facts
+- If analyzing URLs, extract the most relevant information
+- Be concise but comprehensive in your responses
+- If information is uncertain or conflicting, acknowledge it
+- Focus on answering the user's question directly`;
 
 // ============================================================================
 // IMAGE GENERATION CONSTANTS
@@ -254,3 +290,11 @@ export const SAFETY_SETTINGS_OFF = [
   { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
   { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" },
 ];
+
+export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
+You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
+**Absolute paths only**
+**Proactiveness**
+
+<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
+`;
