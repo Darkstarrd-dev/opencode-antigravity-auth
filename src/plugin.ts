@@ -1427,7 +1427,19 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   const maxBackoffMs = (config.max_backoff_seconds ?? 60) * 1000;
                   const headerRetryMs = retryAfterMsFromResponse(response, defaultRetryMs);
                   const bodyInfo = await extractRetryInfoFromBody(response);
-                  const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
+                  let serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
+
+                  // If the body provides an absolute reset timestamp but not a delay,
+                  // prefer the precise lockout window.
+                  if ((bodyInfo.retryDelayMs === null || bodyInfo.retryDelayMs === undefined) && bodyInfo.quotaResetTime) {
+                    const ts = Date.parse(bodyInfo.quotaResetTime);
+                    if (Number.isFinite(ts)) {
+                      const untilMs = ts - Date.now();
+                      if (Number.isFinite(untilMs) && untilMs > 0) {
+                        serverRetryMs = Math.max(untilMs, 2000);
+                      }
+                    }
+                  }
 
                   // [Enhanced Parsing] Pass status to handling logic
                   const rateLimitReason = parseRateLimitReason(bodyInfo.reason, bodyInfo.message, response.status);
@@ -1666,7 +1678,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 // Success or non-retryable error - return the response
                 if (response.ok) {
                   markPreferredEndpoint(headerStyle, currentEndpoint);
-                  account.consecutiveFailures = 0;
+                  accountManager.markRequestSuccess(account, family, headerStyle, model);
                   getHealthTracker().recordSuccess(account.index);
                   accountManager.markAccountUsed(account.index);
                 }

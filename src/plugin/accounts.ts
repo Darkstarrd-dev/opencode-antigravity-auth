@@ -164,6 +164,21 @@ function getQuotaKey(family: ModelFamily, headerStyle: HeaderStyle, model?: stri
   return base;
 }
 
+function getRateLimitStorageKey(
+  family: ModelFamily,
+  headerStyle: HeaderStyle,
+  model: string | null | undefined,
+  reason: RateLimitReason,
+): QuotaKey {
+  // Keep model-level isolation ONLY for long-lived quota exhaustion.
+  // For RPM/TPM throttles, capacity, and generic errors, we lock at the quota-pool level
+  // to avoid poisoning the pool with per-model locks (matches Antigravity-Manager behavior).
+  if (family !== "claude" && reason === "QUOTA_EXHAUSTED" && model) {
+    return getQuotaKey(family, headerStyle, model);
+  }
+  return getQuotaKey(family, headerStyle);
+}
+
 function isRateLimitedForQuotaKey(account: ManagedAccount, key: QuotaKey): boolean {
   const resetTime = account.rateLimitResetTimes[key];
   return resetTime !== undefined && nowMs() < resetTime;
@@ -545,15 +560,37 @@ export class AccountManager {
     account.lastFailureTime = now;
     
     const backoffMs = calculateBackoffMs(reason, failures - 1, retryAfterMs);
-    const key = getQuotaKey(family, headerStyle, model);
+    const key = getRateLimitStorageKey(family, headerStyle, model, reason);
     account.rateLimitResetTimes[key] = now + backoffMs;
     
     return backoffMs;
   }
 
-  markRequestSuccess(account: ManagedAccount): void {
-    if (account.consecutiveFailures) {
-      account.consecutiveFailures = 0;
+  markRequestSuccess(
+    account: ManagedAccount,
+    family?: ModelFamily,
+    headerStyle?: HeaderStyle,
+    model?: string | null,
+  ): void {
+    account.consecutiveFailures = 0;
+
+    if (!family || !headerStyle) {
+      return;
+    }
+
+    // Success implies this account is currently usable; clear any stale locks for the
+    // quota pool we just succeeded on, so we don't keep rotating on a recovered account.
+    if (family === "claude") {
+      delete account.rateLimitResetTimes.claude;
+      return;
+    }
+
+    const baseKey = getQuotaKey(family, headerStyle);
+    delete account.rateLimitResetTimes[baseKey];
+
+    if (model) {
+      const modelKey = getQuotaKey(family, headerStyle, model);
+      delete account.rateLimitResetTimes[modelKey];
     }
   }
 

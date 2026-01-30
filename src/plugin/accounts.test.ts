@@ -1292,6 +1292,68 @@ describe("AccountManager", () => {
 
         vi.useRealTimers();
       });
+
+      it("stores RATE_LIMIT_EXCEEDED at quota-pool level (not model-level)", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1000);
+
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const account = manager.getAccounts()[0]!;
+        const model = "gemini-1.5-pro";
+
+        manager.markRateLimitedWithReason(
+          account,
+          "gemini",
+          "antigravity",
+          model,
+          "RATE_LIMIT_EXCEEDED",
+          null,
+        );
+
+        expect(account.rateLimitResetTimes["gemini-antigravity"]).toBeDefined();
+        expect(account.rateLimitResetTimes[`gemini-antigravity:${model}`]).toBeUndefined();
+
+        vi.useRealTimers();
+      });
+
+      it("stores QUOTA_EXHAUSTED at model level when model is provided", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1000);
+
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const account = manager.getAccounts()[0]!;
+        const model = "gemini-1.5-pro";
+
+        manager.markRateLimitedWithReason(
+          account,
+          "gemini",
+          "antigravity",
+          model,
+          "QUOTA_EXHAUSTED",
+          null,
+        );
+
+        expect(account.rateLimitResetTimes["gemini-antigravity"]).toBeUndefined();
+        expect(account.rateLimitResetTimes[`gemini-antigravity:${model}`]).toBeDefined();
+
+        vi.useRealTimers();
+      });
     });
 
     describe("markRequestSuccess", () => {
@@ -1310,6 +1372,38 @@ describe("AccountManager", () => {
         account.consecutiveFailures = 5;
         manager.markRequestSuccess(account);
         expect(account.consecutiveFailures).toBe(0);
+      });
+
+      it("clears base quota-pool lock on success", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(10_000);
+
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            {
+              refreshToken: "r1",
+              projectId: "p1",
+              addedAt: 1,
+              lastUsed: 0,
+              rateLimitResetTimes: {
+                "gemini-antigravity": 999_999,
+                "gemini-antigravity:gemini-1.5-pro": 999_999,
+              },
+            },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const account = manager.getAccounts()[0]!;
+
+        manager.markRequestSuccess(account, "gemini", "antigravity", "gemini-1.5-pro");
+
+        expect(account.rateLimitResetTimes["gemini-antigravity"]).toBeUndefined();
+        expect(account.rateLimitResetTimes["gemini-antigravity:gemini-1.5-pro"]).toBeUndefined();
+
+        vi.useRealTimers();
       });
     });
 
