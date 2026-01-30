@@ -229,10 +229,11 @@ describe("request.ts", () => {
   });
 
   describe("ensureThoughtSignature", () => {
-    it("returns part unchanged when no cached signature exists", () => {
+    it("adds sentinel signature when no cached signature exists", () => {
       const part = { thought: true, text: "thinking..." };
       const result = ensureThoughtSignature(part, "no-cache-session");
-      expect(result).toEqual(part);
+      // Now uses sentinel fallback to prevent API rejection
+      expect(result.thoughtSignature).toBe("skip_thought_signature_validator");
     });
 
     it("preserves existing thoughtSignature", () => {

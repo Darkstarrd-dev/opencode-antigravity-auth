@@ -1,4 +1,6 @@
 {
+  "include": ["src/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist", "temp_research", "script"],
   "compilerOptions": {
     // Environment setup & latest features
     "lib": ["ESNext", "DOM"],

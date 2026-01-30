@@ -1,156 +1,280 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json",
-  "title": "Antigravity Auth Configuration",
-  "description": "Configuration schema for opencode-antigravity-auth plugin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
     "$schema": {
-      "type": "string",
-      "description": "JSON Schema reference for IDE support"
+      "type": "string"
     },
     "quiet_mode": {
-      "type": "boolean",
       "default": false,
-      "description": "Suppress most toast notifications (rate limit, account switching, etc.). Recovery toasts are always shown."
+      "type": "boolean",
+      "description": "Suppress most toast notifications (rate limit, account switching). Recovery toasts always shown. Env: OPENCODE_ANTIGRAVITY_QUIET=1"
     },
     "debug": {
-      "type": "boolean",
       "default": false,
-      "description": "Enable debug logging to file. Env override: OPENCODE_ANTIGRAVITY_DEBUG=1"
+      "type": "boolean",
+      "description": "Enable debug logging to file. Env: OPENCODE_ANTIGRAVITY_DEBUG=1 (or =2 for verbose)"
     },
     "log_dir": {
       "type": "string",
-      "description": "Custom directory for debug logs. Env override: OPENCODE_ANTIGRAVITY_LOG_DIR=/path/to/logs"
+      "description": "Custom directory for debug logs. Env: OPENCODE_ANTIGRAVITY_LOG_DIR=/path/to/logs"
     },
     "keep_thinking": {
-      "type": "boolean",
       "default": false,
-      "description": "[EXPERIMENTAL] Preserve thinking blocks for Claude models using signature caching. Env override: OPENCODE_ANTIGRAVITY_KEEP_THINKING=1"
+      "type": "boolean",
+      "description": "Preserve thinking blocks for Claude models using signature caching. May cause signature errors. Env: OPENCODE_ANTIGRAVITY_KEEP_THINKING=1"
     },
     "session_recovery": {
-      "type": "boolean",
       "default": true,
-      "description": "Enable automatic session recovery from tool_result_missing and thinking errors."
+      "type": "boolean",
+      "description": "Enable automatic session recovery from tool_result_missing errors. Env: OPENCODE_ANTIGRAVITY_SESSION_RECOVERY=1"
     },
     "auto_resume": {
+      "default": false,
       "type": "boolean",
-      "default": true,
-      "description": "Automatically send 'continue' prompt after successful recovery. Only applies when session_recovery is enabled."
+      "description": "Automatically send resume prompt after successful recovery. Env: OPENCODE_ANTIGRAVITY_AUTO_RESUME=1"
     },
     "resume_text": {
-      "type": "string",
       "default": "continue",
-      "description": "Custom text to send when auto-resuming after recovery."
-    },
-    "auto_update": {
-      "type": "boolean",
-      "default": true,
-      "description": "Enable automatic plugin updates."
-    },
-    "max_rate_limit_wait_seconds": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 3600,
-      "default": 300,
-      "description": "Maximum time in seconds to wait when all accounts are rate-limited. If the minimum wait time exceeds this, fails fast with an error. Set to 0 to disable (wait indefinitely)."
-    },
-    "quota_fallback": {
-      "type": "boolean",
-      "default": false,
-      "description": "Gemini only. When rate-limited on primary quota pool (Antigravity or Gemini CLI), automatically try the alternate pool before switching accounts. Effectively doubles retry attempts per account."
-    },
-    "account_selection_strategy": {
       "type": "string",
-      "enum": ["sticky", "round-robin", "hybrid"],
-      "default": "sticky",
-      "description": "Strategy for selecting accounts: sticky (same until rate-limited), round-robin (rotate each request), hybrid (fresh accounts first, then sticky). Env override: OPENCODE_ANTIGRAVITY_ACCOUNT_SELECTION_STRATEGY"
+      "description": "Custom text to send when auto-resuming after recovery. Env: OPENCODE_ANTIGRAVITY_RESUME_TEXT=continue"
     },
     "signature_cache": {
       "type": "object",
       "properties": {
         "enabled": {
-          "type": "boolean",
           "default": true,
+          "type": "boolean",
           "description": "Enable disk caching of thinking block signatures."
         },
         "memory_ttl_seconds": {
+          "default": 3600,
           "type": "number",
           "minimum": 60,
           "maximum": 86400,
-          "default": 3600,
           "description": "In-memory TTL in seconds."
         },
         "disk_ttl_seconds": {
+          "default": 172800,
           "type": "number",
           "minimum": 3600,
           "maximum": 604800,
-          "default": 172800,
           "description": "Disk TTL in seconds."
         },
         "write_interval_seconds": {
+          "default": 60,
           "type": "number",
           "minimum": 10,
           "maximum": 600,
-          "default": 60,
           "description": "Background write interval in seconds."
         }
       },
+      "required": [
+        "enabled",
+        "memory_ttl_seconds",
+        "disk_ttl_seconds",
+        "write_interval_seconds"
+      ],
       "additionalProperties": false,
       "description": "Signature cache configuration for persisting thinking block signatures. Only used when keep_thinking is enabled."
     },
     "empty_response_max_attempts": {
+      "default": 4,
       "type": "number",
       "minimum": 1,
       "maximum": 10,
-      "default": 4,
       "description": "Maximum retry attempts when Antigravity returns an empty response (no candidates)."
     },
     "empty_response_retry_delay_ms": {
+      "default": 2000,
       "type": "number",
       "minimum": 500,
       "maximum": 10000,
-      "default": 2000,
       "description": "Delay in milliseconds between empty response retries."
     },
     "tool_id_recovery": {
-      "type": "boolean",
       "default": true,
+      "type": "boolean",
       "description": "Enable tool ID orphan recovery. Matches mismatched tool responses by function name or creates placeholders."
     },
     "claude_tool_hardening": {
-      "type": "boolean",
       "default": true,
+      "type": "boolean",
       "description": "Enable tool hallucination prevention for Claude models. Injects parameter signatures and strict usage rules."
     },
     "proactive_token_refresh": {
-      "type": "boolean",
       "default": true,
+      "type": "boolean",
       "description": "Enable proactive background token refresh before expiry, ensuring requests never block."
     },
     "proactive_refresh_buffer_seconds": {
+      "default": 1800,
       "type": "number",
       "minimum": 60,
       "maximum": 7200,
-      "default": 1800,
       "description": "Seconds before token expiry to trigger proactive refresh."
     },
     "proactive_refresh_check_interval_seconds": {
+      "default": 300,
       "type": "number",
       "minimum": 30,
       "maximum": 1800,
-      "default": 300,
       "description": "Interval between proactive refresh checks in seconds."
     },
-    "switch_on_first_rate_limit": {
-      "type": "boolean",
-      "default": true,
-      "description": "Switch to next account immediately on first 429 rate limit (after 1s delay). When disabled, waits for full retry-after duration before switching."
+    "max_rate_limit_wait_seconds": {
+      "default": 300,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3600
+    },
+    "quota_fallback": {
+      "default": false,
+      "type": "boolean"
+    },
+    "account_selection_strategy": {
+      "default": "hybrid",
+      "type": "string",
+      "enum": [
+        "sticky",
+        "round-robin",
+        "hybrid"
+      ]
     },
     "pid_offset_enabled": {
-      "type": "boolean",
       "default": false,
-      "description": "Use process ID to offset initial account selection. Helps distribute load when running multiple OpenCode sessions in parallel (e.g., with subagents)."
+      "type": "boolean"
+    },
+    "switch_on_first_rate_limit": {
+      "default": true,
+      "type": "boolean"
+    },
+    "default_retry_after_seconds": {
+      "default": 60,
+      "type": "number",
+      "minimum": 1,
+      "maximum": 300
+    },
+    "max_backoff_seconds": {
+      "default": 60,
+      "type": "number",
+      "minimum": 5,
+      "maximum": 300
+    },
+    "health_score": {
+      "type": "object",
+      "properties": {
+        "initial": {
+          "default": 70,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "success_reward": {
+          "default": 1,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "rate_limit_penalty": {
+          "default": -10,
+          "type": "number",
+          "minimum": -50,
+          "maximum": 0
+        },
+        "failure_penalty": {
+          "default": -20,
+          "type": "number",
+          "minimum": -100,
+          "maximum": 0
+        },
+        "recovery_rate_per_hour": {
+          "default": 2,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "min_usable": {
+          "default": 50,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "max_score": {
+          "default": 100,
+          "type": "number",
+          "minimum": 50,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "initial",
+        "success_reward",
+        "rate_limit_penalty",
+        "failure_penalty",
+        "recovery_rate_per_hour",
+        "min_usable",
+        "max_score"
+      ],
+      "additionalProperties": false
+    },
+    "token_bucket": {
+      "type": "object",
+      "properties": {
+        "max_tokens": {
+          "default": 50,
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "regeneration_rate_per_minute": {
+          "default": 6,
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 60
+        },
+        "initial_tokens": {
+          "default": 50,
+          "type": "number",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "max_tokens",
+        "regeneration_rate_per_minute",
+        "initial_tokens"
+      ],
+      "additionalProperties": false
+    },
+    "auto_update": {
+      "default": true,
+      "type": "boolean",
+      "description": "Enable automatic plugin updates. Env: OPENCODE_ANTIGRAVITY_AUTO_UPDATE=1"
+    },
+    "web_search": {
+      "type": "object",
+      "properties": {
+        "default_mode": {
+          "default": "off",
+          "type": "string",
+          "enum": [
+            "auto",
+            "off"
+          ]
+        },
+        "grounding_threshold": {
+          "default": 0.3,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "default_mode",
+        "grounding_threshold"
+      ],
+      "additionalProperties": false
     }
-  }
+  },
+  "additionalProperties": false
 }

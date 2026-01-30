@@ -22,6 +22,16 @@ export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', '
 export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>;
 
 /**
+ * Scheduling mode for rate limit behavior.
+ * 
+ * - `cache_first`: Wait for same account to recover (preserves prompt cache). Default.
+ * - `balance`: Switch account immediately on rate limit. Maximum availability.
+ * - `performance_first`: Round-robin distribution for maximum throughput.
+ */
+export const SchedulingModeSchema = z.enum(['cache_first', 'balance', 'performance_first']);
+export type SchedulingMode = z.infer<typeof SchedulingModeSchema>;
+
+/**
  * Signature cache configuration for persisting thinking block signatures to disk.
  */
 export const SignatureCacheConfigSchema = z.object({
@@ -255,12 +265,66 @@ export const AntigravityConfigSchema = z.object({
   pid_offset_enabled: z.boolean().default(false),
    
    /**
-    * Switch to another account immediately on first rate limit (after 1s delay).
-    * When disabled, retries same account first, then switches on second rate limit.
+      * Switch to another account immediately on first rate limit (after 1s delay).
+      * When disabled, retries same account first, then switches on second rate limit.
+      * 
+      * @default true
+      */
+    switch_on_first_rate_limit: z.boolean().default(true),
+    
+    /**
+     * Scheduling mode for rate limit behavior.
+     * 
+     * - `cache_first`: Wait for same account to recover (preserves prompt cache). Default.
+     * - `balance`: Switch account immediately on rate limit. Maximum availability.
+     * - `performance_first`: Round-robin distribution for maximum throughput.
+     * 
+     * Env override: OPENCODE_ANTIGRAVITY_SCHEDULING_MODE
+     * @default "cache_first"
+     */
+    scheduling_mode: SchedulingModeSchema.default('cache_first'),
+    
+    /**
+     * Maximum seconds to wait for same account in cache_first mode.
+     * If the account's rate limit reset time exceeds this, switch accounts.
+     * 
+     * @default 60
+     */
+    max_cache_first_wait_seconds: z.number().min(5).max(300).default(60),
+    
+    /**
+     * TTL in seconds for failure count expiration.
+     * After this period of no failures, consecutiveFailures resets to 0.
+     * This prevents old failures from permanently penalizing an account.
+     * 
+     * @default 3600 (1 hour)
+     */
+    failure_ttl_seconds: z.number().min(60).max(7200).default(3600),
+   
+   /**
+    * Default retry delay in seconds when API doesn't return a retry-after header.
+    * Lower values allow faster retries but may trigger more 429 errors.
     * 
-    * @default true
+    * @default 60
     */
-   switch_on_first_rate_limit: z.boolean().default(true),
+   default_retry_after_seconds: z.number().min(1).max(300).default(60),
+   
+   /**
+    * Maximum backoff delay in seconds for exponential retry.
+    * This caps how long the exponential backoff can grow.
+    * 
+    * @default 60
+    */
+   max_backoff_seconds: z.number().min(5).max(300).default(60),
+   
+   /**
+    * Maximum random delay in milliseconds before each API request.
+    * Adds timing jitter to break predictable request cadence patterns.
+    * Set to 0 to disable request jitter.
+    * 
+    * @default 0
+    */
+   request_jitter_max_ms: z.number().min(0).max(5000).default(0),
    
    // =========================================================================
    // Health Score (used by hybrid strategy)
@@ -296,27 +360,6 @@ export const AntigravityConfigSchema = z.object({
    */
   auto_update: z.boolean().default(true),
 
-  // =========================================================================
-  // Web Search (Gemini Grounding)
-  // =========================================================================
-
-  web_search: z.object({
-    /**
-     * Default mode for web search when not specified by variant.
-     * - `auto`: Model decides when to search (dynamic retrieval).
-     * - `off`: Search is disabled by default.
-     * @default "off"
-     */
-    default_mode: z.enum(['auto', 'off']).default('off'),
-
-    /**
-     * Dynamic retrieval threshold (0.0 to 1.0).
-     * Higher values make the model search LESS often (requires higher confidence to trigger search).
-     * Only applies in 'auto' mode.
-     * @default 0.3
-     */
-    grounding_threshold: z.number().min(0).max(1).default(0.3),
-  }).optional(),
 });
 
 export type AntigravityConfig = z.infer<typeof AntigravityConfigSchema>;
@@ -344,6 +387,12 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
   account_selection_strategy: 'hybrid',
   pid_offset_enabled: false,
   switch_on_first_rate_limit: true,
+  scheduling_mode: 'cache_first',
+  max_cache_first_wait_seconds: 60,
+  failure_ttl_seconds: 3600,
+  default_retry_after_seconds: 60,
+  max_backoff_seconds: 60,
+  request_jitter_max_ms: 0,
   auto_update: true,
   signature_cache: {
     enabled: true,
@@ -364,9 +413,5 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
     max_tokens: 50,
     regeneration_rate_per_minute: 6,
     initial_tokens: 50,
-  },
-  web_search: {
-    default_mode: 'off',
-    grounding_threshold: 0.3,
   },
 };

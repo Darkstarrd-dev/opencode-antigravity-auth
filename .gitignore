@@ -33,3 +33,15 @@ antigravity-debug-*.log
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Hive workflow internal files
+.hive/
+
+# Test artifacts
+test-file.ts
+
+# Local subrepos (not part of this project)
+CLIProxyAPI/
+LLM-API-Key-Proxy/
+opencode/
+opencode-better-antigravity-auth/

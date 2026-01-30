@@ -492,25 +492,20 @@ describe("transform/gemini", () => {
     });
 
     describe("Google Search (Grounding)", () => {
-      it("injects googleSearchRetrieval tool when mode is 'auto'", () => {
+      it("injects googleSearch tool when mode is 'auto'", () => {
         const payload: RequestPayload = { contents: [], tools: [] };
         applyGeminiTransforms(payload, {
           model: "gemini-3-pro",
-          googleSearch: { mode: "auto", threshold: 0.3 },
+          googleSearch: { mode: "auto" },
         });
         const tools = payload.tools as unknown[];
         expect(tools).toHaveLength(1);
         expect(tools[0]).toEqual({
-          googleSearchRetrieval: {
-            dynamicRetrievalConfig: {
-              mode: "MODE_DYNAMIC",
-              dynamicThreshold: 0.3,
-            },
-          },
+          googleSearch: {},
         });
       });
 
-      it("uses custom threshold value", () => {
+      it("ignores threshold value (deprecated in new API)", () => {
         const payload: RequestPayload = { contents: [] };
         applyGeminiTransforms(payload, {
           model: "gemini-3-flash",
@@ -518,12 +513,11 @@ describe("transform/gemini", () => {
         });
         const tools = payload.tools as unknown[];
         const searchTool = tools[0] as Record<string, unknown>;
-        const retrieval = searchTool.googleSearchRetrieval as Record<string, unknown>;
-        const config = retrieval.dynamicRetrievalConfig as Record<string, unknown>;
-        expect(config.dynamicThreshold).toBe(0.7);
+        // New API uses simple googleSearch: {} without threshold
+        expect(searchTool).toEqual({ googleSearch: {} });
       });
 
-      it("defaults threshold to 0.3 when not specified", () => {
+      it("works without threshold specified", () => {
         const payload: RequestPayload = { contents: [] };
         applyGeminiTransforms(payload, {
           model: "gemini-3-pro",
@@ -531,9 +525,7 @@ describe("transform/gemini", () => {
         });
         const tools = payload.tools as unknown[];
         const searchTool = tools[0] as Record<string, unknown>;
-        const retrieval = searchTool.googleSearchRetrieval as Record<string, unknown>;
-        const config = retrieval.dynamicRetrievalConfig as Record<string, unknown>;
-        expect(config.dynamicThreshold).toBe(0.3);
+        expect(searchTool).toEqual({ googleSearch: {} });
       });
 
       it("does not inject search tool when mode is 'off'", () => {
@@ -564,23 +556,23 @@ describe("transform/gemini", () => {
         };
         applyGeminiTransforms(payload, {
           model: "gemini-3-pro",
-          googleSearch: { mode: "auto", threshold: 0.5 },
+          googleSearch: { mode: "auto" },
         });
         const tools = payload.tools as unknown[];
         expect(tools).toHaveLength(2);
         const lastTool = tools[1] as Record<string, unknown>;
-        expect(lastTool).toHaveProperty("googleSearchRetrieval");
+        expect(lastTool).toHaveProperty("googleSearch");
       });
 
       it("search tool is not normalized (skipped by normalizeGeminiTools)", () => {
         const payload: RequestPayload = { contents: [] };
         applyGeminiTransforms(payload, {
           model: "gemini-3-pro",
-          googleSearch: { mode: "auto", threshold: 0.3 },
+          googleSearch: { mode: "auto" },
         });
         const tools = payload.tools as unknown[];
         const searchTool = tools[0] as Record<string, unknown>;
-        expect(searchTool).toHaveProperty("googleSearchRetrieval");
+        expect(searchTool).toHaveProperty("googleSearch");
         expect(searchTool).not.toHaveProperty("function");
         expect(searchTool).not.toHaveProperty("custom");
       });
@@ -1116,7 +1108,23 @@ describe("transform/gemini", () => {
       expect(decls[0]!.parameters).toEqual({ type: "OBJECT", properties: { x: { type: "NUMBER" } } });
     });
 
-    it("preserves googleSearchRetrieval tools as passthrough", () => {
+    it("preserves googleSearch tools as passthrough (new API)", () => {
+      const payload: RequestPayload = {
+        contents: [],
+        tools: [
+          { name: "tool1", parameters: { type: "OBJECT", properties: {} } },
+          { googleSearch: {} },
+        ],
+      };
+      wrapToolsAsFunctionDeclarations(payload);
+
+      const tools = payload.tools as Array<Record<string, unknown>>;
+      expect(tools).toHaveLength(2);
+      expect(tools[0]).toHaveProperty("functionDeclarations");
+      expect(tools[1]).toHaveProperty("googleSearch");
+    });
+
+    it("preserves googleSearchRetrieval tools as passthrough (legacy API)", () => {
       const payload: RequestPayload = {
         contents: [],
         tools: [
@@ -1129,7 +1137,7 @@ describe("transform/gemini", () => {
         ],
       };
       wrapToolsAsFunctionDeclarations(payload);
-      
+
       const tools = payload.tools as Array<Record<string, unknown>>;
       expect(tools).toHaveLength(2);
       expect(tools[0]).toHaveProperty("functionDeclarations");
@@ -1446,23 +1454,23 @@ describe("transform/gemini", () => {
       expect(props["x"]!.type).toBe("STRING");
     });
 
-    it("handles mixed tools and googleSearchRetrieval", () => {
+    it("handles mixed tools and googleSearch", () => {
       const payload: RequestPayload = {
         contents: [],
         tools: [
           { name: "my_tool", parameters: { type: "object" } },
         ],
       };
-      
+
       applyGeminiTransforms(payload, {
         model: "gemini-3-pro",
-        googleSearch: { mode: "auto", threshold: 0.5 },
+        googleSearch: { mode: "auto" },
       });
       
       const tools = payload.tools as Array<Record<string, unknown>>;
       expect(tools).toHaveLength(2);
       expect(tools[0]).toHaveProperty("functionDeclarations");
-      expect(tools[1]).toHaveProperty("googleSearchRetrieval");
+      expect(tools[1]).toHaveProperty("googleSearch");
     });
   });
 });

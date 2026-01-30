@@ -766,6 +766,96 @@ describe("transformThinkingParts", () => {
     expect(result.id).toBe("resp-123");
     expect(result.model).toBe("claude-4");
   });
+
+  it("converts Gemini-style thoughtSignature to providerMetadata.anthropic.signature", () => {
+    const response = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { thought: true, text: "thinking here", thoughtSignature: "sig123abc" },
+              { text: "output" },
+            ],
+          },
+        },
+      ],
+    };
+    const result = transformThinkingParts(response) as any;
+    expect(result.candidates[0].content.parts[0].providerMetadata).toEqual({
+      anthropic: { signature: "sig123abc" }
+    });
+    expect(result.candidates[0].content.parts[0].thoughtSignature).toBeUndefined();
+  });
+
+  it("converts Anthropic-style signature to providerMetadata.anthropic.signature", () => {
+    const response = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { type: "thinking", text: "thinking here", signature: "anthro_sig_xyz" },
+              { text: "output" },
+            ],
+          },
+        },
+      ],
+    };
+    const result = transformThinkingParts(response) as any;
+    expect(result.candidates[0].content.parts[0].providerMetadata).toEqual({
+      anthropic: { signature: "anthro_sig_xyz" }
+    });
+    expect(result.candidates[0].content.parts[0].signature).toBeUndefined();
+  });
+
+  it("converts signature in content array (Anthropic-style)", () => {
+    const response = {
+      content: [
+        { type: "thinking", thinking: "my thoughts", signature: "content_sig" },
+        { type: "text", text: "visible" },
+      ],
+    };
+    const result = transformThinkingParts(response) as any;
+    expect(result.content[0].providerMetadata).toEqual({
+      anthropic: { signature: "content_sig" }
+    });
+    expect(result.content[0].signature).toBeUndefined();
+    expect(result.content[0].thoughtSignature).toBeUndefined();
+  });
+
+  it("prefers signature over thoughtSignature when both present", () => {
+    const response = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { thought: true, text: "thinking", signature: "sig_primary", thoughtSignature: "sig_fallback" },
+            ],
+          },
+        },
+      ],
+    };
+    const result = transformThinkingParts(response) as any;
+    expect(result.candidates[0].content.parts[0].providerMetadata).toEqual({
+      anthropic: { signature: "sig_primary" }
+    });
+  });
+
+  it("does not add providerMetadata when no signature present", () => {
+    const response = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { thought: true, text: "thinking without signature" },
+              { text: "output" },
+            ],
+          },
+        },
+      ],
+    };
+    const result = transformThinkingParts(response) as any;
+    expect(result.candidates[0].content.parts[0].providerMetadata).toBeUndefined();
+  });
 });
 
 describe("normalizeThinkingConfig", () => {

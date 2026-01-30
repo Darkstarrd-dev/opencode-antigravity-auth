@@ -1,4 +1,5 @@
 import { exec } from "node:child_process";
+import { tool } from "@opencode-ai/plugin";
 import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_PROVIDER_ID, type HeaderStyle } from "./constants";
 import { authorizeAntigravity, exchangeAntigravity } from "./antigravity/oauth";
 import type { AntigravityTokenExchangeResult } from "./antigravity/oauth";
@@ -36,13 +37,12 @@ import { AccountManager, type ModelFamily, parseRateLimitReason, calculateBackof
 import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
 import { loadConfig, initRuntimeConfig, type AntigravityConfig } from "./plugin/config";
 import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
+import { checkAccountsQuota } from "./plugin/quota";
 import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
 import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
 import { executeImageGeneration } from "./plugin/image";
-import { executeSearch } from "./plugin/search";
-import { tool } from "@opencode-ai/plugin";
 import type {
   GetAuth,
   LoaderResult,
@@ -94,6 +94,41 @@ function clearPreferredEndpoint(headerStyle: HeaderStyle, endpoint: string | und
   if (endpoint && preferredEndpointByHeaderStyle[headerStyle] === endpoint) {
     delete preferredEndpointByHeaderStyle[headerStyle];
   }
+}
+
+// Module-level toast debounce to persist across requests (fixes toast spam)
+const rateLimitToastCooldowns = new Map<string, number>();
+const RATE_LIMIT_TOAST_COOLDOWN_MS = 5000;
+const MAX_TOAST_COOLDOWN_ENTRIES = 100;
+
+// Track if "all accounts rate-limited" toast was shown to prevent spam in while loop
+let allAccountsRateLimitedToastShown = false;
+
+function cleanupToastCooldowns(): void {
+  if (rateLimitToastCooldowns.size > MAX_TOAST_COOLDOWN_ENTRIES) {
+    const now = Date.now();
+    for (const [key, time] of rateLimitToastCooldowns) {
+      if (now - time > RATE_LIMIT_TOAST_COOLDOWN_MS * 2) {
+        rateLimitToastCooldowns.delete(key);
+      }
+    }
+  }
+}
+
+function shouldShowRateLimitToast(message: string): boolean {
+  cleanupToastCooldowns();
+  const toastKey = message.replace(/\d+/g, "X");
+  const lastShown = rateLimitToastCooldowns.get(toastKey) ?? 0;
+  const now = Date.now();
+  if (now - lastShown < RATE_LIMIT_TOAST_COOLDOWN_MS) {
+    return false;
+  }
+  rateLimitToastCooldowns.set(toastKey, now);
+  return true;
+}
+
+function resetAllAccountsRateLimitedToast(): void {
+  allAccountsRateLimitedToastShown = false;
 }
 
 function trackWarmupAttempt(sessionId: string): boolean {
@@ -337,6 +372,7 @@ async function persistAccountPool(
         managedProjectId: parts.managedProjectId,
         addedAt: now,
         lastUsed: now,
+        enabled: true,
       });
       continue;
     }
@@ -385,7 +421,7 @@ async function persistAccountPool(
   });
 }
 
-function retryAfterMsFromResponse(response: Response): number {
+function retryAfterMsFromResponse(response: Response, defaultRetryMs: number = 60_000): number {
   const retryAfterMsHeader = response.headers.get("retry-after-ms");
   if (retryAfterMsHeader) {
     const parsed = Number.parseInt(retryAfterMsHeader, 10);
@@ -402,20 +438,50 @@ function retryAfterMsFromResponse(response: Response): number {
     }
   }
 
-  return 60_000;
+  return defaultRetryMs;
 }
 
+/**
+ * Parse Go-style duration strings to milliseconds.
+ * Supports compound durations: "1h16m0.667s", "1.5s", "200ms", "5m30s"
+ * 
+ * @param duration - Duration string in Go format
+ * @returns Duration in milliseconds, or null if parsing fails
+ */
 function parseDurationToMs(duration: string): number | null {
-  const match = duration.match(/^(\d+(?:\.\d+)?)(s|m|h)?$/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]!);
-  const unit = (match[2] || "s").toLowerCase();
-  switch (unit) {
-    case "h": return value * 3600 * 1000;
-    case "m": return value * 60 * 1000;
-    case "s": return value * 1000;
-    default: return value * 1000;
+  // Handle simple formats first for backwards compatibility
+  const simpleMatch = duration.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/i);
+  if (simpleMatch) {
+    const value = parseFloat(simpleMatch[1]!);
+    const unit = (simpleMatch[2] || "s").toLowerCase();
+    switch (unit) {
+      case "h": return value * 3600 * 1000;
+      case "m": return value * 60 * 1000;
+      case "s": return value * 1000;
+      case "ms": return value;
+      default: return value * 1000;
+    }
   }
+  
+  // Parse compound Go-style durations: "1h16m0.667s", "5m30s", etc.
+  const compoundRegex = /(\d+(?:\.\d+)?)(h|m(?!s)|s|ms)/gi;
+  let totalMs = 0;
+  let matchFound = false;
+  let match;
+  
+  while ((match = compoundRegex.exec(duration)) !== null) {
+    matchFound = true;
+    const value = parseFloat(match[1]!);
+    const unit = match[2]!.toLowerCase();
+    switch (unit) {
+      case "h": totalMs += value * 3600 * 1000; break;
+      case "m": totalMs += value * 60 * 1000; break;
+      case "s": totalMs += value * 1000; break;
+      case "ms": totalMs += value; break;
+    }
+  }
+  
+  return matchFound ? totalMs : null;
 }
 
 interface RateLimitBodyInfo {
@@ -560,12 +626,14 @@ const emptyResponseAttempts = new Map<string, number>();
  * @param accountIndex - The account index
  * @param quotaKey - The quota key (e.g., "gemini-cli", "gemini-antigravity", "claude")
  * @param serverRetryAfterMs - Server-provided retry delay (if any)
+ * @param maxBackoffMs - Maximum backoff delay in milliseconds (default 60000)
  * @returns { attempt, delayMs, isDuplicate } - isDuplicate=true if within dedup window
  */
 function getRateLimitBackoff(
   accountIndex: number, 
   quotaKey: string,
-  serverRetryAfterMs: number | null
+  serverRetryAfterMs: number | null,
+  maxBackoffMs: number = 60_000
 ): { attempt: number; delayMs: number; isDuplicate: boolean } {
   const now = Date.now();
   const stateKey = `${accountIndex}:${quotaKey}`;
@@ -575,7 +643,7 @@ function getRateLimitBackoff(
   if (previous && (now - previous.lastAt < RATE_LIMIT_DEDUP_WINDOW_MS)) {
     // Same rate limit event from concurrent request - don't increment
     const baseDelay = serverRetryAfterMs ?? 1000;
-    const backoffDelay = Math.min(baseDelay * Math.pow(2, previous.consecutive429 - 1), 60_000);
+    const backoffDelay = Math.min(baseDelay * Math.pow(2, previous.consecutive429 - 1), maxBackoffMs);
     return { 
       attempt: previous.consecutive429, 
       delayMs: Math.max(baseDelay, backoffDelay),
@@ -595,7 +663,7 @@ function getRateLimitBackoff(
   });
   
   const baseDelay = serverRetryAfterMs ?? 1000;
-  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), 60_000);
+  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxBackoffMs);
   return { attempt, delayMs: Math.max(baseDelay, backoffDelay), isDuplicate: false };
 }
 
@@ -690,7 +758,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
   // Load configuration from files and environment variables
   const config = loadConfig(directory);
   initRuntimeConfig(config);
-  
+
   // Initialize debug with config
   initializeDebug(config);
   
@@ -939,9 +1007,21 @@ export const createAntigravityPlugin = (providerId: string) => async (
             }
           };
 
-          // Helper to show toast without blocking on abort
+          // Use while(true) loop to handle rate limits with backoff
+          // This ensures we wait and retry when all accounts are rate-limited
+          const quietMode = config.quiet_mode;
+
+          // Helper to show toast without blocking on abort (respects quiet_mode)
           const showToast = async (message: string, variant: "info" | "warning" | "success" | "error") => {
+            if (quietMode) return;
             if (abortSignal?.aborted) return;
+            
+            if (variant === "warning" && message.toLowerCase().includes("rate")) {
+              if (!shouldShowRateLimitToast(message)) {
+                return;
+              }
+            }
+            
             try {
               await client.tui.showToast({
                 body: { message, variant },
@@ -950,10 +1030,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
               // TUI may not be available
             }
           };
-
-          // Use while(true) loop to handle rate limits with backoff
-          // This ensures we wait and retry when all accounts are rate-limited
-          const quietMode = config.quiet_mode;
           
           const hasOtherAccountWithAntigravity = (currentAccount: any): boolean => {
             if (family !== "gemini") return false;
@@ -982,8 +1058,15 @@ export const createAntigravityPlugin = (providerId: string) => async (
             );
             
             if (!account) {
+              const headerStyle = getHeaderStyleFromUrl(urlString, family);
+              const explicitQuota = isExplicitQuotaFromUrl(urlString);
               // All accounts are rate-limited - wait and retry
-              const waitMs = accountManager.getMinWaitTimeForFamily(family, model) || 60_000;
+              const waitMs = accountManager.getMinWaitTimeForFamily(
+                family,
+                model,
+                headerStyle,
+                explicitQuota,
+              ) || 60_000;
               const waitSecValue = Math.max(1, Math.ceil(waitMs / 1000));
 
               pushDebug(`all-rate-limited family=${family} accounts=${accountCount} waitMs=${waitMs}`);
@@ -1014,12 +1097,18 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 );
               }
 
-              await showToast(`All ${accountCount} account(s) rate-limited for ${family}. Waiting ${waitSecValue}s...`, "warning");
+              if (!allAccountsRateLimitedToastShown) {
+                await showToast(`All ${accountCount} account(s) rate-limited for ${family}. Waiting ${waitSecValue}s...`, "warning");
+                allAccountsRateLimitedToastShown = true;
+              }
 
               // Wait for the rate-limit cooldown to expire, then retry
               await sleep(waitMs, abortSignal);
               continue;
             }
+
+            // Account is available - reset the toast flag
+            resetAllAccountsRateLimitedToast();
 
             pushDebug(
               `selected idx=${account.index} email=${account.email ?? ""} family=${family} accounts=${accountCount} strategy=${config.account_selection_strategy}`,
@@ -1034,11 +1123,14 @@ export const createAntigravityPlugin = (providerId: string) => async (
               });
             }
 
-            // Show toast when switching to a different account (debounced, respects quiet mode)
-            if (!quietMode && accountCount > 1 && accountManager.shouldShowAccountToast(account.index)) {
+            // Show toast when switching to a different account (debounced, quiet_mode handled by showToast)
+            if (accountCount > 1 && accountManager.shouldShowAccountToast(account.index)) {
               const accountLabel = account.email || `Account ${account.index + 1}`;
+              // Calculate position among enabled accounts (not absolute index)
+              const enabledAccounts = accountManager.getEnabledAccounts();
+              const enabledPosition = enabledAccounts.findIndex(a => a.index === account.index) + 1;
               await showToast(
-                `Using ${accountLabel} (${account.index + 1}/${accountCount})`,
+                `Using ${accountLabel} (${enabledPosition}/${accountCount})`,
                 "info"
               );
               accountManager.markToastShown(account.index);
@@ -1223,6 +1315,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
             let headerStyle = getHeaderStyleFromUrl(urlString, family);
             const explicitQuota = isExplicitQuotaFromUrl(urlString);
             pushDebug(`headerStyle=${headerStyle} explicit=${explicitQuota}`);
+            if (account.fingerprint) {
+              pushDebug(`fingerprint: quotaUser=${account.fingerprint.quotaUser} deviceId=${account.fingerprint.deviceId.slice(0, 8)}...`);
+            }
             
             // Check if this header style is rate-limited for this account
             if (accountManager.isRateLimitedForHeaderStyle(account, family, headerStyle, model)) {
@@ -1232,12 +1327,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 if (alternateStyle && alternateStyle !== headerStyle) {
                   const quotaName = headerStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity";
                   const altQuotaName = alternateStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity";
-                  if (!quietMode) {
-                    await showToast(
-                      `${quotaName} quota exhausted, using ${altQuotaName} quota`,
-                      "warning"
-                    );
-                  }
+                  await showToast(
+                    `${quotaName} quota exhausted, using ${altQuotaName} quota`,
+                    "warning"
+                  );
                   headerStyle = alternateStyle;
                   pushDebug(`quota fallback: ${headerStyle}`);
                 } else {
@@ -1257,7 +1350,18 @@ export const createAntigravityPlugin = (providerId: string) => async (
             let tokenConsumed = false;
             
             const endpointFallbacks = buildEndpointFallbacks(headerStyle);
+
+            // Track capacity retries per endpoint to prevent infinite loops
+            let capacityRetryCount = 0;
+            let lastEndpointIndex = -1;
+
             for (let i = 0; i < endpointFallbacks.length; i++) {
+              // Reset capacity retry counter when switching to a new endpoint
+              if (i !== lastEndpointIndex) {
+                capacityRetryCount = 0;
+                lastEndpointIndex = i;
+              }
+
               const currentEndpoint = endpointFallbacks[i];
 
               try {
@@ -1271,10 +1375,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   forceThinkingRecovery,
                   {
                     claudeToolHardening: config.claude_tool_hardening,
-                    googleSearch: config.web_search ? {
-                      mode: config.web_search.default_mode,
-                      threshold: config.web_search.grounding_threshold
-                    } : undefined,
+                    fingerprint: account.fingerprint,
                   },
                 );
 
@@ -1294,6 +1395,13 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                 await runThinkingWarmup(prepared, projectContext.effectiveProjectId);
 
+                if (config.request_jitter_max_ms > 0) {
+                  const jitterMs = Math.floor(Math.random() * config.request_jitter_max_ms);
+                  if (jitterMs > 0) {
+                    await sleep(jitterMs, abortSignal);
+                  }
+                }
+
                 // Consume token for hybrid strategy
                 // Refunded later if request fails (429 or network error)
                 if (config.account_selection_strategy === 'hybrid') {
@@ -1306,8 +1414,8 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
 
 
-                // Handle 429 rate limit with improved logic
-                if (response.status === 429) {
+                // Handle 429 rate limit (or Service Overloaded) with improved logic
+                if (response.status === 429 || response.status === 503 || response.status === 529) {
                   clearPreferredEndpoint(headerStyle, currentEndpoint);
                   // Refund token on rate limit
                   if (tokenConsumed) {
@@ -1315,17 +1423,66 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     tokenConsumed = false;
                   }
 
-                  const headerRetryMs = retryAfterMsFromResponse(response);
+                  const defaultRetryMs = (config.default_retry_after_seconds ?? 60) * 1000;
+                  const maxBackoffMs = (config.max_backoff_seconds ?? 60) * 1000;
+                  const headerRetryMs = retryAfterMsFromResponse(response, defaultRetryMs);
                   const bodyInfo = await extractRetryInfoFromBody(response);
                   const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
+
+                  // [Enhanced Parsing] Pass status to handling logic
+                  const rateLimitReason = parseRateLimitReason(bodyInfo.reason, bodyInfo.message, response.status);
+
+                  // STRATEGY 1: CAPACITY / SERVER ERROR (Transient)
+                  // Goal: Wait and Retry SAME Account. DO NOT LOCK.
+                  // We handle this FIRST to avoid calling getRateLimitBackoff() and polluting the global rate limit state for transient errors.
+                  if (rateLimitReason === "MODEL_CAPACITY_EXHAUSTED" || rateLimitReason === "SERVER_ERROR") {
+                     // Exponential backoff with jitter for capacity errors: 1s → 2s → 4s → 8s (max)
+                     // Matches Antigravity-Manager's ExponentialBackoff(1s, 8s)
+                     const baseDelayMs = 1000;
+                     const maxDelayMs = 8000;
+                     const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, capacityRetryCount), maxDelayMs);
+                     // Add ±10% jitter to prevent thundering herd
+                     const jitter = exponentialDelay * (0.9 + Math.random() * 0.2);
+                     const waitMs = Math.round(jitter);
+                     const waitSec = Math.round(waitMs / 1000);
+                     
+                     pushDebug(`Server busy (${rateLimitReason}) on account ${account.index}, exponential backoff ${waitMs}ms (attempt ${capacityRetryCount + 1})`);
+
+                     await showToast(
+                       `⏳ Server busy (${response.status}). Retrying in ${waitSec}s...`,
+                       "warning",
+                     );
+                     
+                     await sleep(waitMs, abortSignal);
+                     
+                     // CRITICAL FIX: Decrement i so that the loop 'continue' retries the SAME endpoint index
+                     // (i++ in the loop will bring it back to the current index)
+                     // But limit retries to prevent infinite loops (Greptile feedback)
+                     if (capacityRetryCount < 3) {
+                       capacityRetryCount++;
+                       i -= 1;
+                       continue; 
+                      } else {
+                        pushDebug(`Max capacity retries (3) exhausted for endpoint ${currentEndpoint}, regenerating fingerprint...`);
+                        // Regenerate fingerprint to get fresh device identity before trying next endpoint
+                        const newFingerprint = accountManager.regenerateAccountFingerprint(account.index);
+                        if (newFingerprint) {
+                          pushDebug(`Fingerprint regenerated for account ${account.index}`);
+                        }
+                        continue;
+                      }
+                  }
+
+                  // STRATEGY 2: RATE LIMIT EXCEEDED (RPM) / QUOTA EXHAUSTED / UNKNOWN
+                  // Goal: Lock and Rotate (Standard Logic)
+                  
+                  // Only now do we call getRateLimitBackoff, which increments the global failure tracker
                   const quotaKey = headerStyleToQuotaKey(headerStyle, family);
                   const { attempt, delayMs, isDuplicate } = getRateLimitBackoff(account.index, quotaKey, serverRetryMs);
-
-                  const rateLimitReason = parseRateLimitReason(bodyInfo.reason, bodyInfo.message);
+                  
+                  // Calculate potential backoffs
                   const smartBackoffMs = calculateBackoffMs(rateLimitReason, account.consecutiveFailures ?? 0, serverRetryMs);
                   const effectiveDelayMs = Math.max(delayMs, smartBackoffMs);
-                  
-                  const isCapacityExhausted = rateLimitReason === "MODEL_CAPACITY_EXHAUSTED";
 
                   pushDebug(
                     `429 idx=${account.index} email=${account.email ?? ""} family=${family} delayMs=${effectiveDelayMs} attempt=${attempt} reason=${rateLimitReason}`,
@@ -1353,46 +1510,42 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                   getHealthTracker().recordRateLimit(account.index);
 
-                  if (isCapacityExhausted) {
-                    const capacityBackoffMs = calculateBackoffMs(rateLimitReason, account.consecutiveFailures ?? 0, serverRetryMs);
-                    accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
-                    
-                    const backoffFormatted = formatWaitTime(capacityBackoffMs);
-                    const failures = account.consecutiveFailures ?? 0;
-                    pushDebug(`capacity exhausted on account ${account.index}, backoff=${capacityBackoffMs}ms (failure #${failures})`);
-
-                    // Check if we can switch to another account (respects switch_on_first_rate_limit config)
-                    if (config.switch_on_first_rate_limit && accountCount > 1) {
-                      await showToast(`Server at capacity. Switching account in 1s...`, "warning");
-                      await sleep(FIRST_RETRY_DELAY_MS, abortSignal);
-                      shouldSwitchAccount = true;
-                      break;
-                    }
-
-                    // No other accounts available or config disabled - wait the backoff
-                    await showToast(
-                      `Server at capacity. Waiting ${backoffFormatted}... (attempt ${failures})`,
-                      "warning",
-                    );
-                    await sleep(capacityBackoffMs, abortSignal);
-                    continue;
-                  }
-                  
                   const accountLabel = account.email || `Account ${account.index + 1}`;
 
-                  if (attempt === 1) {
+                  // Progressive retry for standard 429s: 1st 429 → 1s then switch (if enabled) or retry same
+                  if (attempt === 1 && rateLimitReason !== "QUOTA_EXHAUSTED") {
                     await showToast(`Rate limited. Quick retry in 1s...`, "warning");
                     await sleep(FIRST_RETRY_DELAY_MS, abortSignal);
                     
+                    // CacheFirst mode: wait for same account if within threshold (preserves prompt cache)
+                    if (config.scheduling_mode === 'cache_first') {
+                      const maxCacheFirstWaitMs = config.max_cache_first_wait_seconds * 1000;
+                      // effectiveDelayMs is the backoff calculated for this account
+                      if (effectiveDelayMs <= maxCacheFirstWaitMs) {
+                        pushDebug(`cache_first: waiting ${effectiveDelayMs}ms for same account to recover`);
+                        await showToast(`⏳ Waiting ${Math.ceil(effectiveDelayMs / 1000)}s for same account (prompt cache preserved)...`, "info");
+                        accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
+                        await sleep(effectiveDelayMs, abortSignal);
+                        // Retry same endpoint after wait
+                        i -= 1;
+                        continue;
+                      }
+                      // Wait time exceeds threshold, fall through to switch
+                      pushDebug(`cache_first: wait ${effectiveDelayMs}ms exceeds max ${maxCacheFirstWaitMs}ms, switching account`);
+                    }
+                    
                     if (config.switch_on_first_rate_limit && accountCount > 1) {
-                      accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
+                      accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000);
                       shouldSwitchAccount = true;
                       break;
                     }
+                    
+                    // Same endpoint retry for first RPM hit
+                    i -= 1; 
                     continue;
                   }
 
-                  accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
+                  accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000);
 
                   accountManager.requestSaveToDisk();
 
@@ -1515,6 +1668,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   markPreferredEndpoint(headerStyle, currentEndpoint);
                   account.consecutiveFailures = 0;
                   getHealthTracker().recordSuccess(account.index);
+                  accountManager.markAccountUsed(account.index);
                 }
                 logAntigravityDebugResponse(debugContext, response, {
                   note: response.ok ? "Success" : `Error ${response.status}`,
@@ -1527,12 +1681,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     const cloned = response.clone();
                     const bodyText = await cloned.text();
                     if (bodyText.includes("Prompt is too long") || bodyText.includes("prompt_too_long")) {
-                      if (!quietMode) {
-                        await showToast(
-                          "Context too long - use /compact to reduce size",
-                          "warning"
-                        );
-                      }
+                      await showToast(
+                        "Context too long - use /compact to reduce size",
+                        "warning"
+                      );
                       const errorMessage = `[Antigravity Error] Context is too long for this model.\n\nPlease use /compact to reduce context size, then retry your request.\n\nAlternatively, you can:\n- Use /clear to start fresh\n- Use /undo to remove recent messages\n- Switch to a model with larger context window`;
                       return createSyntheticErrorResponse(errorMessage, prepared.requestedModel);
                     }
@@ -1598,7 +1750,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                 // Check for context errors and show appropriate toast
                 const contextError = transformedResponse.headers.get("x-antigravity-context-error");
-                if (contextError && !quietMode) {
+                if (contextError) {
                   if (contextError === "prompt_too_long") {
                     await showToast(
                       "Context too long - use /compact to reduce size, or trim your request",
@@ -1737,19 +1889,146 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
             // Check for existing accounts and prompt user for login mode
             let startFresh = true;
+            let refreshAccountIndex: number | undefined;
             const existingStorage = await loadAccounts();
             if (existingStorage && existingStorage.accounts.length > 0) {
-              const existingAccounts = existingStorage.accounts.map((acc, idx) => ({
-                email: acc.email,
-                index: idx,
-              }));
+              let menuResult;
+              while (true) {
+                const now = Date.now();
+                const existingAccounts = existingStorage.accounts.map((acc, idx) => {
+                  let status: 'active' | 'rate-limited' | 'expired' | 'unknown' = 'unknown';
+                  
+                  const rateLimits = acc.rateLimitResetTimes;
+                  if (rateLimits) {
+                    const isRateLimited = Object.values(rateLimits).some(
+                      (resetTime) => typeof resetTime === 'number' && resetTime > now
+                    );
+                    if (isRateLimited) {
+                      status = 'rate-limited';
+                    } else {
+                      status = 'active';
+                    }
+                  } else {
+                    status = 'active';
+                  }
+
+                  if (acc.coolingDownUntil && acc.coolingDownUntil > now) {
+                    status = 'rate-limited';
+                  }
+
+                  return {
+                    email: acc.email,
+                    index: idx,
+                    addedAt: acc.addedAt,
+                    lastUsed: acc.lastUsed,
+                    status,
+                    isCurrentAccount: idx === (existingStorage.activeIndex ?? 0),
+                    enabled: acc.enabled !== false,
+                  };
+                });
+                
+                menuResult = await promptLoginMode(existingAccounts);
+
+                if (menuResult.mode === "check") {
+                  console.log("\nChecking quotas for all accounts...");
+                  const results = await checkAccountsQuota(existingStorage.accounts, client, providerId);
+                  for (const res of results) {
+                    const label = res.email || `Account ${res.index + 1}`;
+                    const disabledStr = res.disabled ? " (disabled)" : "";
+                    console.log(`\n${res.index + 1}. ${label}${disabledStr}`);
+                    if (res.status === "error") {
+                      console.log(`   Error: ${res.error}`);
+                      continue;
+                    }
+                    if (!res.quota || Object.keys(res.quota.groups).length === 0) {
+                      console.log("   No quota information available.");
+                      if (res.quota?.error) console.log(`   Error: ${res.quota.error}`);
+                      continue;
+                    }
+                    const printGrp = (name: string, group: any) => {
+                      if (!group) return;
+                      const remaining = typeof group.remainingFraction === 'number' 
+                        ? `${Math.round(group.remainingFraction * 100)}%` 
+                        : 'UNKNOWN';
+                      const resetStr = group.resetTime ? `, resets in ${formatWaitTime(Date.parse(group.resetTime) - Date.now())}` : '';
+                      console.log(`   ${name}: ${remaining}${resetStr}`);
+                    };
+                    printGrp("Claude", res.quota.groups.claude);
+                    printGrp("Gemini 3 Pro", res.quota.groups["gemini-pro"]);
+                    printGrp("Gemini 3 Flash", res.quota.groups["gemini-flash"]);
+                    if (res.updatedAccount) {
+                      existingStorage.accounts[res.index] = res.updatedAccount;
+                      await saveAccounts(existingStorage);
+                    }
+                  }
+                  console.log("");
+                  continue;
+                }
+
+                if (menuResult.mode === "manage") {
+                  if (menuResult.toggleAccountIndex !== undefined) {
+                    const acc = existingStorage.accounts[menuResult.toggleAccountIndex];
+                    if (acc) {
+                      acc.enabled = acc.enabled === false;
+                      await saveAccounts(existingStorage);
+                      console.log(`\nAccount ${acc.email || menuResult.toggleAccountIndex + 1} ${acc.enabled ? 'enabled' : 'disabled'}.\n`);
+                    }
+                  }
+                  continue;
+                }
+
+                break;
+              }
               
-              const loginMode = await promptLoginMode(existingAccounts);
-              startFresh = loginMode === "fresh";
+              if (menuResult.mode === "cancel") {
+                return {
+                  url: "",
+                  instructions: "Authentication cancelled",
+                  method: "auto",
+                  callback: async () => ({ type: "failed", error: "Authentication cancelled" }),
+                };
+              }
               
-              if (startFresh) {
-                console.log("\nStarting fresh - existing accounts will be replaced.\n");
+              if (menuResult.deleteAccountIndex !== undefined) {
+                const updatedAccounts = existingStorage.accounts.filter(
+                  (_, idx) => idx !== menuResult.deleteAccountIndex
+                );
+                await saveAccounts({
+                  version: 3,
+                  accounts: updatedAccounts,
+                  activeIndex: 0,
+                  activeIndexByFamily: { claude: 0, gemini: 0 },
+                });
+                console.log("\nAccount deleted.\n");
+                
+                if (updatedAccounts.length > 0) {
+                  return {
+                    url: "",
+                    instructions: "Account deleted. Please run `opencode auth login` again to continue.",
+                    method: "auto",
+                    callback: async () => ({ type: "failed", error: "Account deleted - please re-run auth" }),
+                  };
+                }
+              }
+
+              if (menuResult.refreshAccountIndex !== undefined) {
+                refreshAccountIndex = menuResult.refreshAccountIndex;
+                const refreshEmail = existingStorage.accounts[refreshAccountIndex]?.email;
+                console.log(`\nRe-authenticating ${refreshEmail || 'account'}...\n`);
+                startFresh = false;
+              }
+              
+              if (menuResult.deleteAll) {
+                await clearAccounts();
+                console.log("\nAll accounts deleted.\n");
+                startFresh = true;
               } else {
+                startFresh = menuResult.mode === "fresh";
+              }
+              
+              if (startFresh && !menuResult.deleteAll) {
+                console.log("\nStarting fresh - existing accounts will be replaced.\n");
+              } else if (!startFresh) {
                 console.log("\nAdding to existing accounts.\n");
               }
             }
@@ -1859,7 +2138,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
               accounts.push(result);
 
-              // Show toast for successful account authentication
               try {
                 await client.tui.showToast({
                   body: {
@@ -1868,15 +2146,40 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   },
                 });
               } catch {
-                // TUI may not be available in CLI mode
               }
 
               try {
-                // Use startFresh only on first account, subsequent accounts always append
-                const isFirstAccount = accounts.length === 1;
-                await persistAccountPool([result], isFirstAccount && startFresh);
+                if (refreshAccountIndex !== undefined) {
+                  const currentStorage = await loadAccounts();
+                  if (currentStorage) {
+                    const updatedAccounts = [...currentStorage.accounts];
+                    const parts = parseRefreshParts(result.refresh);
+                    if (parts.refreshToken) {
+                      updatedAccounts[refreshAccountIndex] = {
+                        email: result.email ?? updatedAccounts[refreshAccountIndex]?.email,
+                        refreshToken: parts.refreshToken,
+                        projectId: parts.projectId ?? updatedAccounts[refreshAccountIndex]?.projectId,
+                        managedProjectId: parts.managedProjectId ?? updatedAccounts[refreshAccountIndex]?.managedProjectId,
+                        addedAt: updatedAccounts[refreshAccountIndex]?.addedAt ?? Date.now(),
+                        lastUsed: Date.now(),
+                      };
+                      await saveAccounts({
+                        version: 3,
+                        accounts: updatedAccounts,
+                        activeIndex: currentStorage.activeIndex,
+                        activeIndexByFamily: currentStorage.activeIndexByFamily,
+                      });
+                    }
+                  }
+                } else {
+                  const isFirstAccount = accounts.length === 1;
+                  await persistAccountPool([result], isFirstAccount && startFresh);
+                }
               } catch {
-                // ignore
+              }
+
+              if (refreshAccountIndex !== undefined) {
+                break;
               }
 
               if (accounts.length >= MAX_OAUTH_ACCOUNTS) {
@@ -1910,7 +2213,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
               };
             }
 
-            // Get the actual deduplicated account count from storage
             let actualAccountCount = accounts.length;
             try {
               const finalStorage = await loadAccounts();
@@ -1918,12 +2220,15 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 actualAccountCount = finalStorage.accounts.length;
               }
             } catch {
-              // Fall back to accounts.length if we can't read storage
             }
+
+            const successMessage = refreshAccountIndex !== undefined
+              ? `Token refreshed successfully.`
+              : `Multi-account setup complete (${actualAccountCount} account(s)).`;
 
             return {
               url: "",
-              instructions: `Multi-account setup complete (${actualAccountCount} account(s)).`,
+              instructions: successMessage,
               method: "auto",
               callback: async (): Promise<AntigravityTokenExchangeResult> => primary,
             };
@@ -2082,27 +2387,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
   },
   
   tool: {
-    google_search: tool({
-      description: `Search the web using Google Search and analyze URLs. Returns real-time information from the internet with source citations. Use this when you need up-to-date information about current events, recent developments, or any topic that may have changed. You can also provide specific URLs to analyze. IMPORTANT: If the user mentions or provides any URLs in their query, you MUST extract those URLs and pass them in the 'urls' parameter for direct analysis.`,
-      args: {
-        query: tool.schema.string().describe("The search query or question to answer using web search"),
-        urls: tool.schema.array(tool.schema.string()).optional().describe("List of specific URLs to fetch and analyze. IMPORTANT: Always extract and include any URLs mentioned by the user in their query here."),
-        thinking: tool.schema.boolean().optional().default(true).describe("Enable deep thinking for more thorough analysis (default: true)"),
-      },
-      async execute(args, ctx) {
-        if (!cachedGetAuth) {
-          throw new Error("Auth not initialized");
-        }
-        const authContext = await cachedGetAuth();
-        return executeSearch(
-          { query: args.query, urls: args.urls, thinking: args.thinking },
-          authContext.accessToken,
-          authContext.projectId,
-          ctx.abort,
-        );
-      },
-    }),
-
     generate_image: tool({
       description: `Generate images from text descriptions using Gemini's image generation model. Use this tool when the user explicitly asks to generate, create, draw, or make an image, picture, illustration, chart, diagram, or artwork. Examples of triggers: '生成一张xxx的图片', '画一张xxx', '做一个xxx的图表', '创建xxx的插图', 'generate an image of...', 'draw a picture of...', 'create an illustration of...'. Images are automatically saved to the imgs/ directory in the workspace.`,
       args: {

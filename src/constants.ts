@@ -73,14 +73,69 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": "antigravity/1.11.9 windows/amd64",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/1.104.0 Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36",
+  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "Client-Metadata": '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}',
 } as const;
 
 export const GEMINI_CLI_HEADERS = {
-  "User-Agent": "google-api-nodejs-client/9.15.1",
-  "X-Goog-Api-Client": "gl-node/22.17.0",
+  "User-Agent": "google-api-nodejs-client/10.3.0",
+  "X-Goog-Api-Client": "gl-node/22.18.0",
   "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 } as const;
+
+const ANTIGRAVITY_USER_AGENTS = [
+  "antigravity/1.15.8 windows/amd64",
+  "antigravity/1.15.8 darwin/arm64",
+  "antigravity/1.15.8 linux/amd64",
+  "antigravity/1.15.8 darwin/amd64",
+  "antigravity/1.15.8 linux/arm64",
+] as const;
+
+const ANTIGRAVITY_API_CLIENTS = [
+  "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "google-cloud-sdk vscode/1.96.0",
+  "google-cloud-sdk jetbrains/2024.3",
+  "google-cloud-sdk vscode/1.95.0",
+] as const;
+
+const GEMINI_CLI_USER_AGENTS = [
+  "google-api-nodejs-client/9.15.1",
+  "google-api-nodejs-client/9.14.0",
+  "google-api-nodejs-client/9.13.0",
+] as const;
+
+const GEMINI_CLI_API_CLIENTS = [
+  "gl-node/22.17.0",
+  "gl-node/22.12.0",
+  "gl-node/20.18.0",
+  "gl-node/21.7.0",
+] as const;
+
+function randomFrom<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]!;
+}
+
+export type HeaderSet = {
+  "User-Agent": string;
+  "X-Goog-Api-Client": string;
+  "Client-Metadata": string;
+};
+
+export function getRandomizedHeaders(style: HeaderStyle): HeaderSet {
+  if (style === "gemini-cli") {
+    return {
+      "User-Agent": randomFrom(GEMINI_CLI_USER_AGENTS),
+      "X-Goog-Api-Client": randomFrom(GEMINI_CLI_API_CLIENTS),
+      "Client-Metadata": GEMINI_CLI_HEADERS["Client-Metadata"],
+    };
+  }
+  return {
+    "User-Agent": randomFrom(ANTIGRAVITY_USER_AGENTS),
+    "X-Goog-Api-Client": randomFrom(ANTIGRAVITY_API_CLIENTS),
+    "Client-Metadata": ANTIGRAVITY_HEADERS["Client-Metadata"],
+  };
+}
 
 export type HeaderStyle = "antigravity" | "gemini-cli";
 
@@ -155,35 +210,6 @@ You are pair programming with a USER to solve their coding task. The task may re
 `;
 
 // ============================================================================
-// SEARCH TOOL CONSTANTS
-// ============================================================================
-
-/**
- * Model used for Google Search tool execution.
- */
-export const SEARCH_MODEL = "gemini-2.5-flash";
-
-/**
- * Token budget for fast search (default when thinking=false).
- */
-export const SEARCH_THINKING_BUDGET_FAST = 4096;
-
-/**
- * Token budget for deep search (default when thinking=true).
- */
-export const SEARCH_THINKING_BUDGET_DEEP = 16384;
-
-/**
- * Timeout for search requests in milliseconds (60 seconds).
- */
-export const SEARCH_TIMEOUT_MS = 60 * 1000;
-
-/**
- * Search endpoints and headers (mapped to Antigravity).
- */
-export const CODE_ASSIST_HEADERS = ANTIGRAVITY_HEADERS;
-
-// ============================================================================
 // IMAGE GENERATION CONSTANTS
 // ============================================================================
 
@@ -228,4 +254,3 @@ export const SAFETY_SETTINGS_OFF = [
   { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
   { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" },
 ];
-

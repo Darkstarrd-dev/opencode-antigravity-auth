@@ -3,6 +3,7 @@ import { loadAccounts, saveAccounts, type AccountStorageV3, type RateLimitStateV
 import type { OAuthAuthDetails, RefreshParts } from "./types";
 import type { AccountSelectionStrategy } from "./config/schema";
 import { getHealthTracker, getTokenTracker, selectHybridAccount, type AccountWithMetrics } from "./rotation";
+import { generateFingerprint, type Fingerprint, type FingerprintVersion, MAX_FINGERPRINT_HISTORY } from "./fingerprint";
 
 export type { ModelFamily, HeaderStyle, CooldownReason } from "./storage";
 export type { AccountSelectionStrategy } from "./config/schema";
@@ -21,12 +22,33 @@ export interface RateLimitBackoffResult {
 
 const QUOTA_EXHAUSTED_BACKOFFS = [60_000, 300_000, 1_800_000, 7_200_000] as const;
 const RATE_LIMIT_EXCEEDED_BACKOFF = 30_000;
-const MODEL_CAPACITY_EXHAUSTED_BACKOFF = 15_000;
+// Increased from 15s to 45s base + jitter to reduce retry pressure on capacity errors
+const MODEL_CAPACITY_EXHAUSTED_BASE_BACKOFF = 45_000;
+const MODEL_CAPACITY_EXHAUSTED_JITTER_MAX = 30_000; // ±15s jitter range
 const SERVER_ERROR_BACKOFF = 20_000;
 const UNKNOWN_BACKOFF = 60_000;
 const MIN_BACKOFF_MS = 2_000;
 
-export function parseRateLimitReason(reason?: string, message?: string): RateLimitReason {
+/**
+ * Generate a random jitter value for backoff timing.
+ * Helps prevent thundering herd problem when multiple clients retry simultaneously.
+ */
+function generateJitter(maxJitterMs: number): number {
+  return Math.random() * maxJitterMs - (maxJitterMs / 2);
+}
+
+export function parseRateLimitReason(
+  reason: string | undefined, 
+  message: string | undefined, 
+  status?: number
+): RateLimitReason {
+  // 1. Status Code Checks (Rust parity)
+  // 529 = Site Overloaded, 503 = Service Unavailable -> Capacity issues
+  if (status === 529 || status === 503) return "MODEL_CAPACITY_EXHAUSTED";
+  // 500 = Internal Server Error -> Treat as Server Error (soft wait)
+  if (status === 500) return "SERVER_ERROR";
+
+  // 2. Explicit Reason String
   if (reason) {
     switch (reason.toUpperCase()) {
       case "QUOTA_EXHAUSTED": return "QUOTA_EXHAUSTED";
@@ -35,14 +57,31 @@ export function parseRateLimitReason(reason?: string, message?: string): RateLim
     }
   }
   
+  // 3. Message Text Scanning (Rust Regex parity)
   if (message) {
     const lower = message.toLowerCase();
-    if (lower.includes("per minute") || lower.includes("rate limit") || lower.includes("too many requests")) {
+    
+    // Capacity / Overloaded (Transient) - Check FIRST before "exhausted"
+    if (lower.includes("capacity") || lower.includes("overloaded") || lower.includes("resource exhausted")) {
+      return "MODEL_CAPACITY_EXHAUSTED";
+    }
+
+    // RPM / TPM (Short Wait)
+    // "per minute", "rate limit", "too many requests"
+    // "presque" (French: almost) - retained for i18n parity with Rust reference
+    if (lower.includes("per minute") || lower.includes("rate limit") || lower.includes("too many requests") || lower.includes("presque")) {
       return "RATE_LIMIT_EXCEEDED";
     }
+
+    // Quota (Long Wait)
     if (lower.includes("exhausted") || lower.includes("quota")) {
       return "QUOTA_EXHAUSTED";
     }
+  }
+  
+  // Default fallback for 429 without clearer info
+  if (status === 429) {
+    return "UNKNOWN"; 
   }
   
   return "UNKNOWN";
@@ -53,7 +92,9 @@ export function calculateBackoffMs(
   consecutiveFailures: number,
   retryAfterMs?: number | null
 ): number {
+  // Respect explicit Retry-After header if reasonable
   if (retryAfterMs && retryAfterMs > 0) {
+    // Rust uses 2s min buffer, we keep 2s
     return Math.max(retryAfterMs, MIN_BACKOFF_MS);
   }
   
@@ -63,14 +104,15 @@ export function calculateBackoffMs(
       return QUOTA_EXHAUSTED_BACKOFFS[index] ?? UNKNOWN_BACKOFF;
     }
     case "RATE_LIMIT_EXCEEDED":
-      return RATE_LIMIT_EXCEEDED_BACKOFF;
+      return RATE_LIMIT_EXCEEDED_BACKOFF; // 30s
     case "MODEL_CAPACITY_EXHAUSTED":
-      return MODEL_CAPACITY_EXHAUSTED_BACKOFF;
+      // Apply jitter to prevent thundering herd on capacity errors
+      return MODEL_CAPACITY_EXHAUSTED_BASE_BACKOFF + generateJitter(MODEL_CAPACITY_EXHAUSTED_JITTER_MAX);
     case "SERVER_ERROR":
-      return SERVER_ERROR_BACKOFF;
+      return SERVER_ERROR_BACKOFF; // 20s
     case "UNKNOWN":
     default:
-      return UNKNOWN_BACKOFF;
+      return UNKNOWN_BACKOFF; // 60s
   }
 }
 
@@ -85,12 +127,19 @@ export interface ManagedAccount {
   parts: RefreshParts;
   access?: string;
   expires?: number;
+  enabled: boolean;
   rateLimitResetTimes: RateLimitStateV3;
   lastSwitchReason?: "rate-limit" | "initial" | "rotation";
   coolingDownUntil?: number;
   cooldownReason?: CooldownReason;
   touchedForQuota: Record<string, number>;
   consecutiveFailures?: number;
+  /** Timestamp of last failure for TTL-based reset of consecutiveFailures */
+  lastFailureTime?: number;
+  /** Per-account device fingerprint for rate limit mitigation */
+  fingerprint?: import("./fingerprint").Fingerprint;
+  /** History of previous fingerprints for this account */
+  fingerprintHistory?: FingerprintVersion[];
 }
 
 function nowMs(): number {
@@ -229,11 +278,14 @@ export class AccountManager {
             },
             access: matchesFallback ? authFallback?.access : undefined,
             expires: matchesFallback ? authFallback?.expires : undefined,
+            enabled: acc.enabled !== false,
             rateLimitResetTimes: acc.rateLimitResetTimes ?? {},
             lastSwitchReason: acc.lastSwitchReason,
             coolingDownUntil: acc.coolingDownUntil,
             cooldownReason: acc.cooldownReason,
             touchedForQuota: {},
+            // Use stored fingerprint or generate new one for rate limit mitigation
+            fingerprint: acc.fingerprint ?? generateFingerprint(),
           };
         })
         .filter((a): a is ManagedAccount => a !== null);
@@ -269,6 +321,7 @@ export class AccountManager {
           parts: authParts,
           access: authFallback.access,
           expires: authFallback.expires,
+          enabled: true,
           rateLimitResetTimes: {},
           touchedForQuota: {},
         };
@@ -292,6 +345,7 @@ export class AccountManager {
             parts,
             access: authFallback.access,
             expires: authFallback.expires,
+            enabled: true,
             rateLimitResetTimes: {},
             touchedForQuota: {},
           },
@@ -304,7 +358,15 @@ export class AccountManager {
   }
 
   getAccountCount(): number {
+    return this.getEnabledAccounts().length;
+  }
+
+  getTotalAccountCount(): number {
     return this.accounts.length;
+  }
+
+  getEnabledAccounts(): ManagedAccount[] {
+    return this.accounts.filter((account) => account.enabled !== false);
   }
 
   getAccountsSnapshot(): ManagedAccount[] {
@@ -324,12 +386,16 @@ export class AccountManager {
     this.currentAccountIndexByFamily[family] = account.index;
   }
 
+  /**
+   * Check if we should show an account switch toast.
+   * Debounces repeated toasts for the same account.
+   */
   shouldShowAccountToast(accountIndex: number, debounceMs = 30000): boolean {
     const now = nowMs();
-    if (accountIndex === this.lastToastAccountIndex && now - this.lastToastTime < debounceMs) {
-      return false;
+    if (accountIndex !== this.lastToastAccountIndex) {
+      return true;
     }
-    return true;
+    return now - this.lastToastTime >= debounceMs;
   }
 
   markToastShown(accountIndex: number): void {
@@ -359,18 +425,23 @@ export class AccountManager {
       const healthTracker = getHealthTracker();
       const tokenTracker = getTokenTracker();
       
-      const accountsWithMetrics: AccountWithMetrics[] = this.accounts.map(acc => {
-        clearExpiredRateLimits(acc);
-        return {
-          index: acc.index,
-          lastUsed: acc.lastUsed,
-          healthScore: healthTracker.getScore(acc.index),
-          isRateLimited: isRateLimitedForFamily(acc, family, model),
-          isCoolingDown: this.isAccountCoolingDown(acc),
-        };
-      });
+      const accountsWithMetrics: AccountWithMetrics[] = this.accounts
+        .filter(acc => acc.enabled !== false)
+        .map(acc => {
+          clearExpiredRateLimits(acc);
+          return {
+            index: acc.index,
+            lastUsed: acc.lastUsed,
+            healthScore: healthTracker.getScore(acc.index),
+            isRateLimited: isRateLimitedForFamily(acc, family, model),
+            isCoolingDown: this.isAccountCoolingDown(acc),
+          };
+        });
 
-      const selectedIndex = selectHybridAccount(accountsWithMetrics, tokenTracker);
+      // Get current account index for stickiness
+      const currentIndex = this.currentAccountIndexByFamily[family] ?? null;
+      
+      const selectedIndex = selectHybridAccount(accountsWithMetrics, tokenTracker, currentIndex);
       if (selectedIndex !== null) {
         const selected = this.accounts[selectedIndex];
         if (selected) {
@@ -397,7 +468,6 @@ export class AccountManager {
       clearExpiredRateLimits(current);
       const isLimitedForRequestedStyle = isRateLimitedForHeaderStyle(current, family, headerStyle, model);
       if (!isLimitedForRequestedStyle && !this.isAccountCoolingDown(current)) {
-        current.lastUsed = nowMs();
         this.markTouchedForQuota(current, quotaKey);
         return current;
       }
@@ -414,7 +484,7 @@ export class AccountManager {
   getNextForFamily(family: ModelFamily, model?: string | null, headerStyle: HeaderStyle = "antigravity"): ManagedAccount | null {
     const available = this.accounts.filter((a) => {
       clearExpiredRateLimits(a);
-      return !isRateLimitedForHeaderStyle(a, family, headerStyle, model) && !this.isAccountCoolingDown(a);
+      return a.enabled !== false && !isRateLimitedForHeaderStyle(a, family, headerStyle, model) && !this.isAccountCoolingDown(a);
     });
 
     if (available.length === 0) {
@@ -427,7 +497,7 @@ export class AccountManager {
     }
 
     this.cursor++;
-    account.lastUsed = nowMs();
+    // Note: lastUsed is now updated after successful request via markAccountUsed()
     return account;
   }
 
@@ -442,20 +512,41 @@ export class AccountManager {
     account.rateLimitResetTimes[key] = nowMs() + retryAfterMs;
   }
 
+  /**
+   * Mark an account as used after a successful API request.
+   * This updates the lastUsed timestamp for freshness calculations.
+   * Should be called AFTER request completion, not during account selection.
+   */
+  markAccountUsed(accountIndex: number): void {
+    const account = this.accounts.find(a => a.index === accountIndex);
+    if (account) {
+      account.lastUsed = nowMs();
+    }
+  }
+
   markRateLimitedWithReason(
     account: ManagedAccount,
     family: ModelFamily,
     headerStyle: HeaderStyle,
     model: string | null | undefined,
     reason: RateLimitReason,
-    retryAfterMs?: number | null
+    retryAfterMs?: number | null,
+    failureTtlMs: number = 3600_000, // Default 1 hour TTL
   ): number {
+    const now = nowMs();
+    
+    // TTL-based reset: if last failure was more than failureTtlMs ago, reset count
+    if (account.lastFailureTime !== undefined && (now - account.lastFailureTime) > failureTtlMs) {
+      account.consecutiveFailures = 0;
+    }
+    
     const failures = (account.consecutiveFailures ?? 0) + 1;
     account.consecutiveFailures = failures;
+    account.lastFailureTime = now;
     
     const backoffMs = calculateBackoffMs(reason, failures - 1, retryAfterMs);
     const key = getQuotaKey(family, headerStyle, model);
-    account.rateLimitResetTimes[key] = nowMs() + backoffMs;
+    account.rateLimitResetTimes[key] = now + backoffMs;
     
     return backoffMs;
   }
@@ -527,7 +618,8 @@ export class AccountManager {
   getFreshAccountsForQuota(quotaKey: string, family: ModelFamily, model?: string | null): ManagedAccount[] {
     return this.accounts.filter(acc => {
       clearExpiredRateLimits(acc);
-      return this.isFreshForQuota(acc, quotaKey) && 
+      return acc.enabled !== false &&
+             this.isFreshForQuota(acc, quotaKey) && 
              !isRateLimitedForFamily(acc, family, model) && 
              !this.isAccountCoolingDown(acc);
     });
@@ -612,10 +704,17 @@ export class AccountManager {
     };
   }
 
-  getMinWaitTimeForFamily(family: ModelFamily, model?: string | null): number {
+  getMinWaitTimeForFamily(
+    family: ModelFamily,
+    model?: string | null,
+    headerStyle?: HeaderStyle,
+    strict?: boolean,
+  ): number {
     const available = this.accounts.filter((a) => {
       clearExpiredRateLimits(a);
-      return !isRateLimitedForFamily(a, family, model);
+      return a.enabled !== false && (strict && headerStyle
+        ? !isRateLimitedForHeaderStyle(a, family, headerStyle, model)
+        : !isRateLimitedForFamily(a, family, model));
     });
     if (available.length > 0) {
       return 0;
@@ -625,6 +724,10 @@ export class AccountManager {
     for (const a of this.accounts) {
       if (family === "claude") {
         const t = a.rateLimitResetTimes.claude;
+        if (t !== undefined) waitTimes.push(Math.max(0, t - nowMs()));
+      } else if (strict && headerStyle) {
+        const key = getQuotaKey(family, headerStyle, model);
+        const t = a.rateLimitResetTimes[key];
         if (t !== undefined) waitTimes.push(Math.max(0, t - nowMs()));
       } else {
         // For Gemini, account becomes available when EITHER pool expires for this model/family
@@ -666,6 +769,8 @@ export class AccountManager {
         rateLimitResetTimes: Object.keys(a.rateLimitResetTimes).length > 0 ? a.rateLimitResetTimes : undefined,
         coolingDownUntil: a.coolingDownUntil,
         cooldownReason: a.cooldownReason,
+        fingerprint: a.fingerprint,
+        fingerprintHistory: a.fingerprintHistory?.length ? a.fingerprintHistory : undefined,
       })),
       activeIndex: claudeIndex,
       activeIndexByFamily: {
@@ -711,5 +816,99 @@ export class AccountManager {
         resolve();
       }
     }
+  }
+
+  // ========== Fingerprint Management ==========
+
+  /**
+   * Regenerate fingerprint for an account, saving the old one to history.
+   * @param accountIndex - Index of the account to regenerate fingerprint for
+   * @returns The new fingerprint, or null if account not found
+   */
+  regenerateAccountFingerprint(accountIndex: number): Fingerprint | null {
+    const account = this.accounts[accountIndex];
+    if (!account) return null;
+    
+    // Save current fingerprint to history if it exists
+    if (account.fingerprint) {
+      const historyEntry: FingerprintVersion = {
+        fingerprint: account.fingerprint,
+        timestamp: nowMs(),
+        reason: 'regenerated',
+      };
+      
+      if (!account.fingerprintHistory) {
+        account.fingerprintHistory = [];
+      }
+      
+      // Add to beginning of history (most recent first)
+      account.fingerprintHistory.unshift(historyEntry);
+      
+      // Trim to max history size
+      if (account.fingerprintHistory.length > MAX_FINGERPRINT_HISTORY) {
+        account.fingerprintHistory = account.fingerprintHistory.slice(0, MAX_FINGERPRINT_HISTORY);
+      }
+    }
+
+    // Generate and assign new fingerprint
+    account.fingerprint = generateFingerprint();
+    this.requestSaveToDisk();
+    
+    return account.fingerprint;
+  }
+
+  /**
+   * Restore a fingerprint from history for an account.
+   * @param accountIndex - Index of the account
+   * @param historyIndex - Index in the fingerprint history to restore from (0 = most recent)
+   * @returns The restored fingerprint, or null if account/history not found
+   */
+  restoreAccountFingerprint(accountIndex: number, historyIndex: number): Fingerprint | null {
+    const account = this.accounts[accountIndex];
+    if (!account) return null;
+
+    const history = account.fingerprintHistory;
+    if (!history || historyIndex < 0 || historyIndex >= history.length) {
+      return null;
+    }
+    
+    // Capture the fingerprint to restore BEFORE modifying history
+    const fingerprintToRestore = history[historyIndex]!.fingerprint;
+    
+    // Save current fingerprint to history before restoring (if it exists)
+    if (account.fingerprint) {
+      const historyEntry: FingerprintVersion = {
+        fingerprint: account.fingerprint,
+        timestamp: nowMs(),
+        reason: 'restored',
+      };
+      
+      account.fingerprintHistory!.unshift(historyEntry);
+      
+      // Trim to max history size
+      if (account.fingerprintHistory!.length > MAX_FINGERPRINT_HISTORY) {
+        account.fingerprintHistory = account.fingerprintHistory!.slice(0, MAX_FINGERPRINT_HISTORY);
+      }
+    }
+
+    // Restore the fingerprint
+    account.fingerprint = { ...fingerprintToRestore, createdAt: nowMs() };
+    
+    this.requestSaveToDisk();
+    
+    return account.fingerprint;
+  }
+
+  /**
+   * Get fingerprint history for an account.
+   * @param accountIndex - Index of the account
+   * @returns Array of fingerprint versions, or empty array if not found
+   */
+  getAccountFingerprintHistory(accountIndex: number): FingerprintVersion[] {
+    const account = this.accounts[accountIndex];
+    if (!account || !account.fingerprintHistory) {
+      return [];
+    }
+    return [...account.fingerprintHistory];
   }
 }

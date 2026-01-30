@@ -187,7 +187,7 @@ export function resolveModelWithTier(requestedModel: string): ResolvedModel {
   
   // Image models always route to Antigravity
   const quotaPreference = isAntigravity || isAntigravityOnly || isLegacyAntigravity || isImageModel ? "antigravity" : "gemini-cli";
-  const explicitQuota = isAntigravity;
+  const explicitQuota = isAntigravity || isImageModel;
 
   const isGemini3 = modelWithoutQuota.toLowerCase().startsWith("gemini-3");
   const skipAlias = isAntigravity && isGemini3;
@@ -340,8 +340,10 @@ export function resolveModelForHeaderStyle(
     
     const isGemini3Pro = transformedModel.toLowerCase().startsWith("gemini-3-pro");
     const hasTierSuffix = /-(low|medium|high)$/i.test(transformedModel);
+    const isImageModel = IMAGE_GENERATION_MODELS.test(transformedModel);
     
-    if (isGemini3Pro && !hasTierSuffix) {
+    // Don't add tier suffix to image models - they don't support thinking
+    if (isGemini3Pro && !hasTierSuffix && !isImageModel) {
       transformedModel = `${transformedModel}-low`;
     }
     

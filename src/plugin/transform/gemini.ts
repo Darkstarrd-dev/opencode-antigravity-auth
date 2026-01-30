@@ -27,7 +27,7 @@ import type { RequestPayload, ThinkingConfig, ThinkingTier, GoogleSearchConfig }
 const UNSUPPORTED_SCHEMA_FIELDS = new Set([
   "additionalProperties",
   "$schema",
-  "$id", 
+  "$id",
   "$comment",
   "$ref",
   "$defs",
@@ -98,7 +98,7 @@ export function toGeminiSchema(schema: unknown): unknown {
       // Filter required array to only include properties that exist
       // This fixes: "parameters.required[X]: property is not defined"
       if (propertyNames.size > 0) {
-        const validRequired = value.filter((prop) => 
+        const validRequired = value.filter((prop) =>
           typeof prop === "string" && propertyNames.has(prop)
         );
         if (validRequired.length > 0) {
@@ -210,13 +210,13 @@ const VALID_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9
 export function buildImageGenerationConfig(): ImageConfig {
   // Read aspect ratio from environment or default to 1:1
   const aspectRatio = process.env.OPENCODE_IMAGE_ASPECT_RATIO || "1:1";
-  
+
   if (VALID_ASPECT_RATIOS.includes(aspectRatio)) {
     return { aspectRatio };
   }
-  
+
   console.warn(`[gemini] Invalid aspect ratio "${aspectRatio}". Using default "1:1". Valid values: ${VALID_ASPECT_RATIOS.join(", ")}`);
-  
+
   // Default to 1:1 square aspect ratio
   return { aspectRatio: "1:1" };
 }
@@ -239,9 +239,9 @@ export function normalizeGeminiTools(
 
   payload.tools = (payload.tools as unknown[]).map((tool: unknown, toolIndex: number) => {
     const t = tool as Record<string, unknown>;
-    
-    // Skip normalization for Google Search Retrieval tool
-    if (t.googleSearchRetrieval) {
+
+    // Skip normalization for Google Search tools (both old and new API)
+    if (t.googleSearch || t.googleSearchRetrieval) {
       return t;
     }
 
@@ -289,12 +289,12 @@ export function normalizeGeminiTools(
     if (newTool.function && schema) {
       (newTool.function as Record<string, unknown>).input_schema = schema;
     }
-    
+
     // Always update custom.input_schema with transformed schema
     if (newTool.custom && schema) {
       (newTool.custom as Record<string, unknown>).input_schema = schema;
     }
-    
+
     // Create custom from function if missing
     if (!newTool.custom && newTool.function) {
       const fn = newTool.function as Record<string, unknown>;
@@ -317,11 +317,11 @@ export function normalizeGeminiTools(
         newTool.parameters = schema;
       }
     }
-    
+
     if (newTool.custom && !(newTool.custom as Record<string, unknown>).input_schema) {
-      (newTool.custom as Record<string, unknown>).input_schema = { 
-        type: "OBJECT", 
-        properties: {}, 
+      (newTool.custom as Record<string, unknown>).input_schema = {
+        type: "OBJECT",
+        properties: {},
       };
       toolDebugMissing += 1;
     }
@@ -362,7 +362,7 @@ export interface GeminiTransformResult {
   toolDebugSummaries: string[];
   /** Number of function declarations after wrapping */
   wrappedFunctionCount: number;
-  /** Number of passthrough tools (googleSearchRetrieval, codeExecution) */
+  /** Number of passthrough tools (googleSearch, googleSearchRetrieval, codeExecution) */
   passthroughToolCount: number;
 }
 
@@ -400,32 +400,30 @@ export function applyGeminiTransforms(
   }
 
   // 2. Apply Google Search (Grounding) if enabled
+  // Uses the new googleSearch API for Gemini 2.0+ / Gemini 3 models
+  // Note: The old googleSearchRetrieval with dynamicRetrievalConfig is deprecated
+  // The new API doesn't support threshold - the model decides when to search automatically
   if (googleSearch && googleSearch.mode === 'auto') {
     const tools = (payload.tools as unknown[]) || [];
     if (!payload.tools) {
       payload.tools = tools;
     }
 
-    // Add Google Search tool
-    // We cast to any[] to avoid TypeScript issues with the loose RequestPayload type
+    // Add Google Search tool using new API format for Gemini 2.0+
+    // See: https://ai.google.dev/gemini-api/docs/grounding
     (payload.tools as any[]).push({
-      googleSearchRetrieval: {
-        dynamicRetrievalConfig: {
-          mode: "MODE_DYNAMIC",
-          dynamicThreshold: googleSearch.threshold ?? 0.3,
-        },
-      },
+      googleSearch: {},
     });
   }
 
   // 3. Normalize tools
   const result = normalizeGeminiTools(payload);
-  
+
   // 4. Wrap tools in functionDeclarations format (fixes #203, #206)
   // Antigravity strict protobuf validation rejects wrapper-level 'parameters' field
   // Must be: [{ functionDeclarations: [{ name, description, parameters }] }]
   const wrapResult = wrapToolsAsFunctionDeclarations(payload);
-  
+
   return {
     ...result,
     wrappedFunctionCount: wrapResult.wrappedFunctionCount,
@@ -450,25 +448,58 @@ export interface WrapToolsResult {
  * The wrapper-level 'parameters' field causes:
  *   "Unknown name 'parameters' at 'request.tools[0]'"
  */
+/**
+ * Detect if a tool is a web search tool in any of the supported formats:
+ * - Claude/Anthropic: { type: "web_search_20250305" } or { name: "web_search" }
+ * - Gemini native: { googleSearch: {} } or { googleSearchRetrieval: {} }
+ */
+function isWebSearchTool(tool: Record<string, unknown>): boolean {
+  // 1. Gemini native format
+  if (tool.googleSearch || tool.googleSearchRetrieval) {
+    return true;
+  }
+
+  // 2. Claude/Anthropic format: { type: "web_search_20250305" }
+  if (tool.type === "web_search_20250305") {
+    return true;
+  }
+
+  // 3. Simple name-based format: { name: "web_search" }
+  const name = tool.name as string | undefined;
+  if (name === "web_search") {
+    return true;
+  }
+
+  return false;
+}
+
 export function wrapToolsAsFunctionDeclarations(payload: RequestPayload): WrapToolsResult {
   if (!Array.isArray(payload.tools) || payload.tools.length === 0) {
     return { wrappedFunctionCount: 0, passthroughToolCount: 0 };
   }
-  
+
   const functionDeclarations: Array<{
     name: string;
     description: string;
     parameters: Record<string, unknown>;
   }> = [];
-  
+
   const passthroughTools: unknown[] = [];
-  
+  let hasWebSearchTool = false;
+
   for (const tool of payload.tools as Array<Record<string, unknown>>) {
-    if (tool.googleSearchRetrieval || tool.codeExecution) {
+    // Handle passthrough tools (Google Search and Code Execution)
+    if (tool.googleSearch || tool.googleSearchRetrieval || tool.codeExecution) {
       passthroughTools.push(tool);
       continue;
     }
-    
+
+    // Detect and convert web search tools to Gemini format
+    if (isWebSearchTool(tool)) {
+      hasWebSearchTool = true;
+      continue; // Will be added as { googleSearch: {} } at the end
+    }
+
     if (tool.functionDeclarations) {
       if (Array.isArray(tool.functionDeclarations)) {
         for (const decl of tool.functionDeclarations as Array<Record<string, unknown>>) {
@@ -481,24 +512,24 @@ export function wrapToolsAsFunctionDeclarations(payload: RequestPayload): WrapTo
       }
       continue;
     }
-    
+
     const fn = tool.function as Record<string, unknown> | undefined;
     const custom = tool.custom as Record<string, unknown> | undefined;
-    
+
     const name = String(
       tool.name ||
       fn?.name ||
       custom?.name ||
       `tool-${functionDeclarations.length}`
     );
-    
+
     const description = String(
       tool.description ||
       fn?.description ||
       custom?.description ||
       ""
     );
-    
+
     const schema = (
       fn?.input_schema ||
       fn?.parameters ||
@@ -510,26 +541,39 @@ export function wrapToolsAsFunctionDeclarations(payload: RequestPayload): WrapTo
       tool.inputSchema ||
       { type: "OBJECT", properties: {} }
     ) as Record<string, unknown>;
-    
+
     functionDeclarations.push({
       name,
       description,
       parameters: schema,
     });
   }
-  
+
   const finalTools: unknown[] = [];
-  
+
   if (functionDeclarations.length > 0) {
     finalTools.push({ functionDeclarations });
   }
-  
+
   finalTools.push(...passthroughTools);
-  
+
+  // Add googleSearch tool if a web search tool was detected
+  // Note: googleSearch cannot be combined with functionDeclarations in the same request
+  // If there are function declarations, we skip adding googleSearch (Gemini API limitation)
+  if (hasWebSearchTool && functionDeclarations.length === 0) {
+    finalTools.push({ googleSearch: {} });
+  } else if (hasWebSearchTool && functionDeclarations.length > 0) {
+    // Log warning: web search requested but can't be used with functions
+    console.warn(
+      "[gemini] web_search tool detected but cannot be combined with function declarations. " +
+      "Use the explicit web_search tool call instead."
+    );
+  }
+
   payload.tools = finalTools;
-  
+
   return {
     wrappedFunctionCount: functionDeclarations.length,
-    passthroughToolCount: passthroughTools.length,
+    passthroughToolCount: passthroughTools.length + (hasWebSearchTool && functionDeclarations.length === 0 ? 1 : 0),
   };
 }

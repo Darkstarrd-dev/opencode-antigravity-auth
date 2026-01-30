@@ -1,5 +1,6 @@
 import { getKeepThinking } from "./config";
 import { createLogger } from "./logger";
+import { cacheSignature } from "./cache";
 import {
   EMPTY_SCHEMA_PLACEHOLDER_NAME,
   EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
@@ -1129,25 +1130,29 @@ function filterContentArray(
     }
 
     // For the LAST assistant message with thinking blocks:
-    // - If signature is valid (length >= 50), pass through unchanged
-    // - If signature is invalid/missing, inject sentinel to bypass validation
+    // - If signature is OUR cached signature, pass through unchanged
+    // - Otherwise inject sentinel to bypass Antigravity validation
+    // NOTE: We can't trust signatures just because they're >= 50 chars - Claude returns
+    // its own signatures which are long but invalid for Antigravity.
     if (isLastAssistantMessage && (isThinking || hasSignature)) {
-      const existingSignature = item.signature || item.thoughtSignature;
-      const hasValidSignature = typeof existingSignature === "string" && existingSignature.length >= 50;
-      
-      if (hasValidSignature) {
-        filtered.push(item);
-      } else {
-        // Invalid or missing signature - inject sentinel
-        const thinkingText = getThinkingText(item) || "";
-        log.debug("Injecting sentinel signature for invalid last-message thinking block");
-        const sentinelPart = {
-          type: item.type || "thinking",
-          thinking: thinkingText,
-          signature: SKIP_THOUGHT_SIGNATURE,
-        };
-        filtered.push(sentinelPart);
+      // First check if it's our cached signature
+      if (isOurCachedSignature(item, sessionId, getCachedSignatureFn)) {
+        const sanitized = sanitizeThinkingPart(item);
+        if (sanitized) filtered.push(sanitized);
+        continue;
       }
+      
+      // Not our signature (or no signature) - inject sentinel
+      const thinkingText = getThinkingText(item) || "";
+      const existingSignature = item.signature || item.thoughtSignature;
+      const signatureInfo = existingSignature ? `foreign signature (${String(existingSignature).length} chars)` : "no signature";
+      log.debug(`Injecting sentinel for last-message thinking block with ${signatureInfo}`);
+      const sentinelPart = {
+        type: item.type || "thinking",
+        thinking: thinkingText,
+        signature: SKIP_THOUGHT_SIGNATURE,
+      };
+      filtered.push(sentinelPart);
       continue;
     }
 
@@ -1355,9 +1360,21 @@ function transformGeminiCandidate(candidate: any): any {
 
     // Handle Gemini-style: thought: true
     if (part.thought === true) {
-      thinkingTexts.push(part.text || "");
+      const thinkingText = part.text || "";
+      thinkingTexts.push(thinkingText);
       const transformed: Record<string, unknown> = { ...part, type: "reasoning" };
       if (part.cache_control) transformed.cache_control = part.cache_control;
+
+      // Convert signature to providerMetadata format for OpenCode
+      const sig = part.signature || part.thoughtSignature;
+      if (sig) {
+        transformed.providerMetadata = {
+          anthropic: { signature: sig }
+        };
+        delete (transformed as any).signature;
+        delete (transformed as any).thoughtSignature;
+      }
+
       return transformed;
     }
 
@@ -1372,13 +1389,28 @@ function transformGeminiCandidate(candidate: any): any {
         thought: true,
       };
       if (part.cache_control) transformed.cache_control = part.cache_control;
+
+      // Convert signature to providerMetadata format for OpenCode
+      const sig = part.signature || part.thoughtSignature;
+      if (sig) {
+        transformed.providerMetadata = {
+          anthropic: { signature: sig }
+        };
+        delete (transformed as any).signature;
+        delete (transformed as any).thoughtSignature;
+      }
+
       return transformed;
     }
 
-    // Handle functionCall: parse JSON strings in args
+    // Handle functionCall: parse JSON strings in args and ensure args is always defined
     // (Ported from LLM-API-Key-Proxy's _extract_tool_call)
-    if (part.functionCall && part.functionCall.args) {
-      const parsedArgs = recursivelyParseJsonStrings(part.functionCall.args);
+    // Fix: When Claude calls a tool with no parameters, args may be undefined.
+    // opencode expects state.input to be a record, so we must ensure args: {} as fallback.
+    if (part.functionCall) {
+      const parsedArgs = part.functionCall.args
+        ? recursivelyParseJsonStrings(part.functionCall.args)
+        : {};
       return {
         ...part,
         functionCall: {
@@ -1430,12 +1462,24 @@ export function transformThinkingParts(response: unknown): unknown {
       if (block && typeof block === "object" && (block as any).type === "thinking") {
         const thinkingText = (block as any).thinking || (block as any).text || "";
         reasoningTexts.push(thinkingText);
-        transformedContent.push({
+        const transformed: Record<string, unknown> = {
           ...block,
           type: "reasoning",
           text: thinkingText,
           thought: true,
-        });
+        };
+
+        // Convert signature to providerMetadata format for OpenCode
+        const sig = (block as any).signature || (block as any).thoughtSignature;
+        if (sig) {
+          transformed.providerMetadata = {
+            anthropic: { signature: sig }
+          };
+          delete (transformed as any).signature;
+          delete (transformed as any).thoughtSignature;
+        }
+
+        transformedContent.push(transformed);
       } else {
         transformedContent.push(block);
       }

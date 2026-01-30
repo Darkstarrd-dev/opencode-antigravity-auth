@@ -10,10 +10,10 @@
 >
 > | Feature                                                                        | Source                                                                                                    |
 > | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-> | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery, `google_search` Tool | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
+> | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` Tool (Native Implementation + Img2Img)                        | Native Implementation                                                                                     |
 >
-> **Status:** Version 1.4.0 - Aligned endpoint headers and metadata with reference implementation.
+> **Status:** Version 1.4.2 - Aligned endpoint headers and metadata with reference implementation.
 
 ---
 
@@ -29,7 +29,27 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 - **Auto Recovery** - Automatic session recovery from Claude tool_result_missing errors
 - **Plugin Compatible** - Works alongside other OpenCode plugins (opencodesync, etc.)
 - **generate_image Tool** - AI image generation with text-to-image, image-to-image (multi-image fusion), auto-save, and 4K support
-- **google_search Tool** - High-quality web search with structural citations and URL analysis.
+
+<details open>
+<summary><b>⚠️ Terms of Service Warning — Read Before Installing</b></summary>
+
+> [!CAUTION]
+> Using this plugin may violate Google's Terms of Service. A small number of users have reported their Google accounts being **banned** or **shadow-banned** (restricted access without explicit notification).
+>
+> **High-risk scenarios:**
+> - 🚨 **Fresh Google accounts** have a very high chance of getting banned
+> - 🚨 **New accounts with Pro/Ultra subscriptions** are frequently flagged and banned
+>
+> **By using this plugin, you acknowledge:**
+> - This is an unofficial tool not endorsed by Google
+> - Your account may be suspended or permanently banned
+> - You assume all risks associated with using this plugin
+>
+> **Recommendation:** Use an established Google account that you don't rely on for critical services. Avoid creating new accounts specifically for this plugin.
+
+</details>
+
+---
 
 ## Installation
 
@@ -49,7 +69,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.0"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.2"]
    }
    ```
 
@@ -100,7 +120,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.0"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.2"],
   "provider": {
     "google": {
       "models": {
@@ -244,7 +264,7 @@ AI image generation with automatic file saving and WebP conversion. Uses `gemini
 | `prompt` | string | Yes | - | Image description |
 | `aspect_ratio` | string | No | "1:1" | Aspect ratio |
 | `quality` | string | No | "standard" | Image quality (hd = 4K) |
-| `imagePaths` | string[] | No | [] | List of reference image paths for Image-to-Image generation (max 10) |
+| `reference_images` | string[] | No | [] | List of reference image paths for Image-to-Image generation (max 10) |
 
 **Supported aspect ratios:** `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `21:9`
 
@@ -257,24 +277,26 @@ AI image generation with automatic file saving and WebP conversion. Uses `gemini
 
 #### Image-to-Image Guide
 
-To use Image-to-Image generation, provide the absolute local paths of your reference images in the `imagePaths` parameter.
+To use Image-to-Image generation, provide the absolute local paths of your reference images in the `reference_images` parameter.
 
 **Scenario 1: Style Transfer**
 - **Prompt**: "Turn this photo into a cyberpunk style illustration"
-- **imagePaths**: `["/path/to/your/photo.jpg"]`
+- **reference_images**: `["/path/to/your/photo.jpg"]`
 
 **Scenario 2: Multi-Image Fusion**
 - **Prompt**: "Combine the cat from the first image and the dog from the second image playing together in a park"
-- **imagePaths**: `["/path/to/cat.jpg", "/path/to/dog.png"]`
+- **reference_images**: `["/path/to/cat.jpg", "/path/to/dog.png"]`
 
 **Notes**:
 - Paths must be absolute local file system paths.
 - Supports JPG, PNG, WebP.
 - Maximum 10 reference images.
 
-### google_search
+**Account management options (via `opencode auth login`):**
+- **Check quotas** — View remaining API quota for each account
+- **Manage accounts** — Enable/disable specific accounts for rotation
 
-High-quality web search and URL analysis with structural citations.
+For details on load balancing, dual quota pools, and account storage, see [docs/MULTI-ACCOUNT.md](docs/MULTI-ACCOUNT.md).
 
 ## License
 
@@ -294,10 +316,10 @@ MIT
 >
 > | 功能                                                                        | 来源                                                                                                    |
 > | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-> | 双配额系统、多账号轮换、会话恢复、思考过程恢复、`google_search` 工具 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
+> | 双配额系统、多账号轮换、会话恢复、思考过程恢复 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` 工具 (原生实现 + 图生图)                                  | 原生实现                                                                                     |
 >
-> **状态:** 版本 1.4.0 - 对齐了端点请求头和元数据实现。
+> **状态:** 版本 1.4.2 - 对齐了端点请求头和元数据实现。
 
 ---
 
@@ -313,7 +335,6 @@ MIT
 - **自动恢复** - 自动处理 Claude 的 `tool_result_missing` 错误并恢复会话
 - **插件兼容性** - 可与其他 OpenCode 插件 (如 opencodesync 等) 同时运行
 - **generate_image 工具** - AI 图像生成，支持文生图、图生图 (多图融合)、自动保存、WebP 转换和 4K 输出
-- **google_search 工具** - 高质量网页搜索，支持结构化引用和 URL 分析。
 
 ## 安装步骤
 
@@ -331,7 +352,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.0"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.2"]
    }
    ```
 
@@ -382,7 +403,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.0"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.2"],
   "provider": {
     "google": {
       "models": {
@@ -505,6 +526,132 @@ MIT
 
 ## 使用示例
 
+### Gemini 3 Models 400 Error ("Unknown name 'parameters'")
+
+**Error:**
+```
+Invalid JSON payload received. Unknown name "parameters" at 'request.tools[0]'
+```
+
+**Causes:**
+- Tool schema incompatibility with Gemini's strict protobuf validation
+- MCP servers with malformed schemas
+- Plugin version regression
+
+**Solutions:**
+1. **Update to latest beta:**
+   ```json
+   { "plugin": ["opencode-antigravity-auth@beta"] }
+   ```
+
+2. **Disable MCP servers** one-by-one to find the problematic one
+
+3. **Add npm override:**
+   ```json
+   { "provider": { "google": { "npm": "@ai-sdk/google" } } }
+   ```
+
+---
+
+### MCP Servers Causing Errors
+
+Some MCP servers have schemas incompatible with Antigravity's strict JSON format.
+
+**Common symptom:**
+```bash
+Invalid function name must start with a letter or underscore
+```
+
+Sometimes it shows up as:
+```bash
+GenerateContentRequest.tools[0].function_declarations[12].name: Invalid function name must start with a letter or underscore
+```
+
+This usually means an MCP tool name starts with a number (for example, a 1mcp key like `1mcp_*`). Rename the MCP key to start with a letter (e.g., `gw`) or disable that MCP entry for Antigravity models.
+
+**Diagnosis:**
+1. Disable all MCP servers in your config
+2. Enable one-by-one until error reappears
+3. Report the specific MCP in a [GitHub issue](https://github.com/NoeFabris/opencode-antigravity-auth/issues)
+
+---
+
+### "All Accounts Rate-Limited" (But Quota Available)
+
+**Cause:** Cascade bug in `clearExpiredRateLimits()` in hybrid mode (fixed in recent beta).
+
+**Solutions:**
+1. Update to latest beta version
+2. If persists, delete accounts file and re-authenticate
+3. Try switching `account_selection_strategy` to `"sticky"` in `antigravity.json`
+
+---
+
+### Session Recovery
+
+If you encounter errors during a session:
+1. Type `continue` to trigger the recovery mechanism
+2. If blocked, use `/undo` to revert to pre-error state
+3. Retry the operation
+
+---
+
+### Using with Oh-My-OpenCode
+
+**Important:** Disable the built-in Google auth to prevent conflicts:
+
+```json
+// ~/.config/opencode/oh-my-opencode.json
+{
+  "google_auth": false,
+  "agents": {
+    "frontend-ui-ux-engineer": { "model": "google/antigravity-gemini-3-pro" },
+    "document-writer": { "model": "google/antigravity-gemini-3-flash" }
+  }
+}
+```
+
+---
+
+### Infinite `.tmp` Files Created
+
+**Cause:** When account is rate-limited and plugin retries infinitely, it creates many temp files.
+
+**Workaround:**
+1. Stop OpenCode
+2. Clean up: `rm ~/.config/opencode/*.tmp`
+3. Add more accounts or wait for rate limit to expire
+
+---
+
+### OAuth Callback Issues
+
+<details>
+<summary><b>Safari OAuth Callback Fails (macOS)</b></summary>
+
+**Symptoms:**
+- "fail to authorize" after successful Google login
+- Safari shows "Safari can't open the page"
+
+**Cause:** Safari's "HTTPS-Only Mode" blocks `http://localhost` callback.
+
+**Solutions:**
+
+1. **Use Chrome or Firefox** (easiest):
+   Copy the OAuth URL and paste into a different browser.
+
+2. **Disable HTTPS-Only Mode temporarily:**
+   - Safari > Settings (⌘,) > Privacy
+   - Uncheck "Enable HTTPS-Only Mode"
+   - Run `opencode auth login`
+   - Re-enable after authentication
+
+</details>
+
+<details>
+<summary><b>Port Conflict (Address Already in Use)</b></summary>
+
+**macOS / Linux:**
 ```bash
 # 使用 Antigravity 配额模型
 opencode run "你好" --model=google/antigravity-claude-sonnet-4-5-thinking-high
@@ -526,7 +673,7 @@ opencode run "你好" --model=google/gemini-2.5-flash
 | `prompt` | string | 是 | - | 图像描述词 |
 | `aspect_ratio` | string | 否 | "1:1" | 纵横比 |
 | `quality` | string | 否 | "standard" | 图像质量 (hd = 4K) |
-| `imagePaths` | string[] | 否 | [] | 图生图参考图片路径列表 (最多10张) |
+| `reference_images` | string[] | 否 | [] | 图生图参考图片路径列表 (最多10张) |
 
 **支持的纵横比:** `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `21:9`
 
@@ -539,25 +686,202 @@ opencode run "你好" --model=google/gemini-2.5-flash
 
 #### 图生图 (Image-to-Image) 使用指南
 
-要使用图生图功能，只需在调用工具时通过 `imagePaths` 参数提供参考图片的本地绝对路径。
+要使用图生图功能，只需在调用工具时通过 `reference_images` 参数提供参考图片的本地绝对路径。
 
 **示例场景 1：风格迁移**
 - **Prompt**: "Turn this photo into a cyberpunk style illustration"
-- **imagePaths**: `["/path/to/your/photo.jpg"]`
+- **reference_images**: `["/path/to/your/photo.jpg"]`
 
 **示例场景 2：多图融合**
 - **Prompt**: "Combine the cat from the first image and the dog from the second image playing together in a park"
-- **imagePaths**: `["/path/to/cat.jpg", "/path/to/dog.png"]`
+- **reference_images**: `["/path/to/cat.jpg", "/path/to/dog.png"]`
 
 **注意**:
 - 图片路径必须是本地文件系统的绝对路径。
 - 支持 JPG, PNG, WebP 格式。
 - 最多支持 10 张参考图片。
 
-### google_search (搜索工具)
-
-高质量网页搜索和 URL 分析，支持结构化引用来源。
-
 ## 开源协议
 
 MIT
+
+---
+
+### Migrating Accounts Between Machines
+
+When copying `antigravity-accounts.json` to a new machine:
+1. Ensure the plugin is installed: `"plugin": ["opencode-antigravity-auth@beta"]`
+2. Copy `~/.config/opencode/antigravity-accounts.json`
+3. If you get "API key missing" error, the refresh token may be invalid — re-authenticate
+
+## Known Plugin Interactions
+For details on load balancing, dual quota pools, and account storage, see [docs/MULTI-ACCOUNT.md](docs/MULTI-ACCOUNT.md).
+
+---
+
+## Plugin Compatibility
+
+### @tarquinen/opencode-dcp
+
+DCP creates synthetic assistant messages that lack thinking blocks. **List this plugin BEFORE DCP:**
+
+```json
+{
+  "plugin": [
+    "opencode-antigravity-auth@latest",
+    "@tarquinen/opencode-dcp@latest"
+  ]
+}
+```
+
+### oh-my-opencode
+
+Disable built-in auth and override agent models in `oh-my-opencode.json`:
+
+```json
+{
+  "google_auth": false,
+  "agents": {
+    "frontend-ui-ux-engineer": { "model": "google/antigravity-gemini-3-pro" },
+    "document-writer": { "model": "google/antigravity-gemini-3-flash" },
+    "multimodal-looker": { "model": "google/antigravity-gemini-3-flash" }
+  }
+}
+```
+
+> **Tip:** When spawning parallel subagents, enable `pid_offset_enabled: true` in `antigravity.json` to distribute sessions across accounts.
+
+### Plugins you don't need
+
+- **gemini-auth plugins** — Not needed. This plugin handles all Google OAuth.
+
+---
+
+## Configuration
+
+Create `~/.config/opencode/antigravity.json` for optional settings:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json"
+}
+```
+
+Most users don't need to configure anything — defaults work well.
+
+### Model Behavior
+
+| Option | Default | What it does |
+|--------|---------|--------------
+| `keep_thinking` | `false` | Preserve Claude's thinking across turns. **Warning:** enabling may degrade model stability. |
+| `session_recovery` | `true` | Auto-recover from tool errors |
+| `web_search.default_mode` | `"off"` | Gemini Google Search: `"auto"` or `"off"` |
+
+### Account Rotation
+
+| Your Setup | Recommended Config |
+|------------|-------------------|
+| **1 account** | `"account_selection_strategy": "sticky"` |
+| **2-5 accounts** | Default (`"hybrid"`) works great |
+| **5+ accounts** | `"account_selection_strategy": "round-robin"` |
+| **Parallel agents** | Add `"pid_offset_enabled": true` |
+
+### Rate Limit Scheduling
+
+Control how the plugin handles rate limits:
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `scheduling_mode` | `"cache_first"` | `"cache_first"` = wait for same account (preserves prompt cache), `"balance"` = switch immediately, `"performance_first"` = round-robin |
+| `max_cache_first_wait_seconds` | `60` | Max seconds to wait in cache_first mode before switching accounts |
+| `failure_ttl_seconds` | `3600` | Reset failure count after this many seconds (prevents old failures from permanently penalizing accounts) |
+
+**When to use each mode:**
+- **cache_first** (default): Best for long conversations. Waits for the same account to recover, preserving your prompt cache.
+- **balance**: Best for quick tasks. Switches accounts immediately when rate-limited for maximum availability.
+- **performance_first**: Best for many short requests. Distributes load evenly across all accounts.
+
+### App Behavior
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `quiet_mode` | `false` | Hide toast notifications |
+| `debug` | `false` | Enable debug logging |
+| `auto_update` | `true` | Auto-update plugin |
+
+For all options, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+**Environment variables:**
+```bash
+OPENCODE_ANTIGRAVITY_DEBUG=1 opencode   # Enable debug logging
+OPENCODE_ANTIGRAVITY_DEBUG=2 opencode   # Verbose logging
+```
+
+---
+
+## Troubleshooting
+
+See the full [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for solutions to common issues including:
+
+- Auth problems and token refresh
+- "Model not found" errors
+- Session recovery
+- Gemini CLI permission errors
+- Safari OAuth issues
+- Plugin compatibility
+- Migration guides
+
+---
+
+## Documentation
+
+- [Configuration](docs/CONFIGURATION.md) — All configuration options
+- [Multi-Account](docs/MULTI-ACCOUNT.md) — Load balancing, dual quota pools, account storage
+- [Model Variants](docs/MODEL-VARIANTS.md) — Thinking budgets and variant system
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — Common issues and fixes
+- [Architecture](docs/ARCHITECTURE.md) — How the plugin works
+- [API Spec](docs/ANTIGRAVITY_API_SPEC.md) — Antigravity API reference
+
+---
+
+## Support
+
+If this plugin helps you, consider supporting its maintenance:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S6S81QBOIR)
+
+---
+
+## Credits
+
+- [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth) by [@jenslys](https://github.com/jenslys)
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+<details>
+<summary><b>Legal</b></summary>
+
+### Intended Use
+
+- Personal / internal development only
+- Respect internal quotas and data handling policies
+- Not for production services or bypassing intended limits
+
+### Warning
+
+By using this plugin, you acknowledge:
+
+- **Terms of Service risk** — This approach may violate ToS of AI model providers
+- **Account risk** — Providers may suspend or ban accounts
+- **No guarantees** — APIs may change without notice
+- **Assumption of risk** — You assume all legal, financial, and technical risks
+
+### Disclaimer
+
+- Not affiliated with Google. This is an independent open-source project.
+- "Antigravity", "Gemini", "Google Cloud", and "Google" are trademarks of Google LLC.
+
+</details>

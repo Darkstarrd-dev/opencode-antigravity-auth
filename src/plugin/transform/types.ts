@@ -81,9 +81,14 @@ export interface ThinkingConfig {
 
 /**
  * Google Search Grounding configuration.
+ *
+ * Note: The new googleSearch API for Gemini 2.0+ does not support threshold
+ * configuration. The model automatically decides when to search.
+ * The threshold field is kept for backward compatibility but is ignored.
  */
 export interface GoogleSearchConfig {
   mode?: 'auto' | 'off';
+  /** @deprecated No longer used - kept for backward compatibility */
   threshold?: number;
 }
 

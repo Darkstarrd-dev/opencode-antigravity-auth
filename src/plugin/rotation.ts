@@ -228,21 +228,29 @@ export function sortByLruWithHealth(
     });
 }
 
+/** Stickiness bonus added to current account's score to prevent unnecessary switching */
+const STICKINESS_BONUS = 150;
+
+/** Minimum score advantage required to switch away from current account */
+const SWITCH_THRESHOLD = 100;
+
 /**
- * Select account using hybrid strategy:
+ * Select account using hybrid strategy with stickiness:
  * 1. Filter available accounts (not rate-limited, not cooling down, healthy, has tokens)
  * 2. Calculate priority score: health (2x) + tokens (5x) + freshness (0.1x)
- * 3. Sort by score descending
- * 4. Return the best candidate (deterministic - highest score)
+ * 3. Apply stickiness bonus to current account
+ * 4. Only switch if another account beats current by SWITCH_THRESHOLD
  * 
  * @param accounts - All accounts with their metrics
  * @param tokenTracker - Token bucket tracker for token balances
+ * @param currentAccountIndex - Currently active account index (for stickiness)
  * @param minHealthScore - Minimum health score to be considered
  * @returns Best account index, or null if none available
  */
 export function selectHybridAccount(
   accounts: AccountWithMetrics[],
   tokenTracker: TokenBucketTracker,
+  currentAccountIndex: number | null = null,
   minHealthScore: number = 50,
 ): number | null {
   const candidates = accounts
@@ -263,13 +271,36 @@ export function selectHybridAccount(
 
   const maxTokens = tokenTracker.getMaxTokens();
   const scored = candidates
-    .map(acc => ({
-      index: acc.index,
-      score: calculateHybridScore(acc, maxTokens)
-    }))
+    .map(acc => {
+      const baseScore = calculateHybridScore(acc, maxTokens);
+      // Apply stickiness bonus to current account
+      const stickinessBonus = acc.index === currentAccountIndex ? STICKINESS_BONUS : 0;
+      return {
+        index: acc.index,
+        baseScore,
+        score: baseScore + stickinessBonus,
+        isCurrent: acc.index === currentAccountIndex
+      };
+    })
     .sort((a, b) => b.score - a.score);
 
-  return scored[0]?.index ?? null;
+  const best = scored[0];
+  if (!best) {
+    return null;
+  }
+
+  // If current account is still a candidate, check if switch is warranted
+  const currentCandidate = scored.find(s => s.isCurrent);
+  if (currentCandidate && !best.isCurrent) {
+    // Only switch if best beats current's BASE score by threshold
+    // (compare base scores to avoid circular stickiness bonus comparison)
+    const advantage = best.baseScore - currentCandidate.baseScore;
+    if (advantage < SWITCH_THRESHOLD) {
+      return currentCandidate.index;
+    }
+  }
+
+  return best.index;
 }
 
 interface AccountWithTokens extends AccountWithMetrics {

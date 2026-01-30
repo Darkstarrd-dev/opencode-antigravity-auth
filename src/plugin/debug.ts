@@ -346,7 +346,20 @@ export function logAccountContext(label: string, info: AccountDebugInfo): void {
 
   const indexLabel = info.index >= 0 ? `${info.index + 1}/${info.totalAccounts}` : `-/${info.totalAccounts}`;
 
-  const rateLimitInfo = info.rateLimitState ? ` rateLimits=${JSON.stringify(info.rateLimitState)}` : "";
+  let rateLimitInfo = "";
+  if (info.rateLimitState && Object.keys(info.rateLimitState).length > 0) {
+    const now = Date.now();
+    const activeRateLimits: Record<string, string> = {};
+    for (const [key, resetTime] of Object.entries(info.rateLimitState)) {
+      if (typeof resetTime === "number" && resetTime > now) {
+        const remainingSec = Math.ceil((resetTime - now) / 1000);
+        activeRateLimits[key] = `${remainingSec}s`;
+      }
+    }
+    if (Object.keys(activeRateLimits).length > 0) {
+      rateLimitInfo = ` rateLimits=${JSON.stringify(activeRateLimits)}`;
+    }
+  }
 
   logDebug(`[Account] ${label}: ${accountLabel} (${indexLabel}) family=${info.family}${rateLimitInfo}`);
 }

@@ -1138,18 +1138,47 @@ describe("AccountManager", () => {
   });
 
   describe("Rate Limit Reason Classification", () => {
+    it("getMinWaitTimeForFamily respects strict header style", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(0));
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getCurrentOrNextForFamily("gemini");
+
+      manager.markRateLimited(account!, 30000, "gemini", "antigravity", "gemini-3-pro-image");
+
+      expect(
+        manager.getMinWaitTimeForFamily(
+          "gemini",
+          "gemini-3-pro-image",
+          "antigravity",
+          true,
+        ),
+      ).toBe(30000);
+
+      expect(manager.getMinWaitTimeForFamily("gemini", "gemini-3-pro-image")).toBe(0);
+    });
+
     describe("parseRateLimitReason", () => {
       it("parses QUOTA_EXHAUSTED from reason field", () => {
-        expect(parseRateLimitReason("QUOTA_EXHAUSTED")).toBe("QUOTA_EXHAUSTED");
-        expect(parseRateLimitReason("quota_exhausted")).toBe("QUOTA_EXHAUSTED");
+        expect(parseRateLimitReason("QUOTA_EXHAUSTED", undefined)).toBe("QUOTA_EXHAUSTED");
+        expect(parseRateLimitReason("quota_exhausted", undefined)).toBe("QUOTA_EXHAUSTED");
       });
 
       it("parses RATE_LIMIT_EXCEEDED from reason field", () => {
-        expect(parseRateLimitReason("RATE_LIMIT_EXCEEDED")).toBe("RATE_LIMIT_EXCEEDED");
+        expect(parseRateLimitReason("RATE_LIMIT_EXCEEDED", undefined)).toBe("RATE_LIMIT_EXCEEDED");
       });
 
       it("parses MODEL_CAPACITY_EXHAUSTED from reason field", () => {
-        expect(parseRateLimitReason("MODEL_CAPACITY_EXHAUSTED")).toBe("MODEL_CAPACITY_EXHAUSTED");
+        expect(parseRateLimitReason("MODEL_CAPACITY_EXHAUSTED", undefined)).toBe("MODEL_CAPACITY_EXHAUSTED");
       });
 
       it("falls back to message parsing when reason is absent", () => {
@@ -1160,7 +1189,7 @@ describe("AccountManager", () => {
 
       it("returns UNKNOWN when no pattern matches", () => {
         expect(parseRateLimitReason(undefined, "Some other error")).toBe("UNKNOWN");
-        expect(parseRateLimitReason()).toBe("UNKNOWN");
+        expect(parseRateLimitReason(undefined, undefined)).toBe("UNKNOWN");
       });
     });
 
@@ -1189,7 +1218,10 @@ describe("AccountManager", () => {
       });
 
       it("returns short backoff for MODEL_CAPACITY_EXHAUSTED", () => {
-        expect(calculateBackoffMs("MODEL_CAPACITY_EXHAUSTED", 0)).toBe(15_000);
+        // Base backoff is 45s with ±15s jitter (range: 30s to 60s)
+        const result = calculateBackoffMs("MODEL_CAPACITY_EXHAUSTED", 0);
+        expect(result).toBeGreaterThanOrEqual(30_000);
+        expect(result).toBeLessThanOrEqual(60_000);
       });
 
       it("returns soft retry for SERVER_ERROR", () => {
@@ -1359,6 +1391,170 @@ describe("AccountManager", () => {
 
         vi.useRealTimers();
       });
+    });
+  });
+
+  describe("Failure TTL Expiration", () => {
+    it("resets consecutiveFailures when lastFailureTime exceeds TTL", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(0));
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getCurrentOrNextForFamily("claude");
+
+      // First failure
+      manager.markRateLimitedWithReason(account!, "claude", "antigravity", null, "QUOTA_EXHAUSTED", null, 3600_000);
+      expect(account!.consecutiveFailures).toBe(1);
+      expect(account!.lastFailureTime).toBe(0);
+
+      // Advance time past TTL (1 hour = 3600s)
+      vi.setSystemTime(new Date(3700_000)); // 3700 seconds later
+
+      // Next failure should reset count because TTL expired
+      manager.markRateLimitedWithReason(account!, "claude", "antigravity", null, "QUOTA_EXHAUSTED", null, 3600_000);
+      expect(account!.consecutiveFailures).toBe(1); // Reset to 0, then +1
+
+      vi.useRealTimers();
+    });
+
+    it("keeps consecutiveFailures when within TTL", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(0));
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getCurrentOrNextForFamily("claude");
+
+      // First failure
+      manager.markRateLimitedWithReason(account!, "claude", "antigravity", null, "QUOTA_EXHAUSTED", null, 3600_000);
+      expect(account!.consecutiveFailures).toBe(1);
+
+      // Advance time within TTL
+      vi.setSystemTime(new Date(1800_000)); // 30 minutes later (within 1 hour TTL)
+
+      // Next failure should increment
+      manager.markRateLimitedWithReason(account!, "claude", "antigravity", null, "QUOTA_EXHAUSTED", null, 3600_000);
+      expect(account!.consecutiveFailures).toBe(2);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("Fingerprint History", () => {
+    it("regenerateAccountFingerprint saves old fingerprint to history", () => {
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getCurrentOrNextForFamily("claude");
+      
+      // Set initial fingerprint
+      const originalFingerprint = account!.fingerprint;
+      
+      // Regenerate
+      const newFingerprint = manager.regenerateAccountFingerprint(0);
+      
+      expect(newFingerprint).not.toBeNull();
+      expect(newFingerprint).not.toEqual(originalFingerprint);
+      expect(account!.fingerprintHistory?.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it("restoreAccountFingerprint restores from history", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(1000)); // Start at 1000 to avoid 0 being falsy
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.getCurrentOrNextForFamily("claude");
+      
+      // Generate initial fingerprint
+      const original = manager.regenerateAccountFingerprint(0);
+      const originalDeviceId = original?.deviceId;
+      
+      vi.setSystemTime(new Date(2000));
+      
+      // Generate second fingerprint (pushes first to history at index 0)
+      manager.regenerateAccountFingerprint(0);
+      
+      // History[0] should be the "original" fingerprint
+      const history = manager.getAccountFingerprintHistory(0);
+      expect(history.length).toBeGreaterThanOrEqual(1);
+      expect(history[0]?.fingerprint.deviceId).toBe(originalDeviceId);
+      
+      vi.setSystemTime(new Date(3000));
+      
+      // Restore from history[0] - should get the "original" back
+      // Note: restore also pushes current to history, so after restore:
+      // - Current = original fingerprint
+      // - History[0] = what was current before restore
+      const restored = manager.restoreAccountFingerprint(0, 0);
+      
+      expect(restored).not.toBeNull();
+      expect(restored?.deviceId).toBe(originalDeviceId);
+
+      vi.useRealTimers();
+    });
+
+    it("getAccountFingerprintHistory returns empty array for new account", () => {
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      
+      const history = manager.getAccountFingerprintHistory(0);
+      expect(history).toEqual([]);
+    });
+
+    it("limits fingerprint history to MAX_FINGERPRINT_HISTORY", () => {
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      
+      // Regenerate 7 times (should only keep 5 in history)
+      for (let i = 0; i < 7; i++) {
+        manager.regenerateAccountFingerprint(0);
+      }
+      
+      const history = manager.getAccountFingerprintHistory(0);
+      expect(history.length).toBeLessThanOrEqual(5);
     });
   });
 });

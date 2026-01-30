@@ -1,16 +1,20 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { AntigravityConfigSchema } from "../src/plugin/config/schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outputPath = join(__dirname, "../assets/antigravity.schema.json");
 
-const jsonSchema = zodToJsonSchema(AntigravityConfigSchema, {
-  name: "AntigravityConfig",
-  $refStrategy: "none",
+// Use zod v4's built-in toJSONSchema method
+const rawSchema = AntigravityConfigSchema.toJSONSchema({
+  unrepresentable: "any",
+  override: (_ctx) => undefined // Use default handling
 }) as Record<string, unknown>;
+
+// Remove the "required" array since all fields have defaults and are optional
+// This preserves backwards compatibility with the draft-07 schema behavior
+delete rawSchema.required;
 
 const envVarDescriptions: Record<string, string> = {
   quiet_mode:
@@ -72,14 +76,14 @@ function addDescriptions(schema: Record<string, unknown>): void {
   }
 }
 
-const definitions = jsonSchema.definitions as Record<string, Record<string, unknown>> | undefined;
+const definitions = rawSchema.definitions as Record<string, Record<string, unknown>> | undefined;
 if (definitions?.AntigravityConfig) {
   addDescriptions(definitions.AntigravityConfig);
 } else {
-  addDescriptions(jsonSchema);
+  addDescriptions(rawSchema);
 }
 
 mkdirSync(dirname(outputPath), { recursive: true });
-writeFileSync(outputPath, JSON.stringify(jsonSchema, null, 2) + "\n");
+writeFileSync(outputPath, JSON.stringify(rawSchema, null, 2) + "\n");
 
 console.log(`Schema written to ${outputPath}`);
