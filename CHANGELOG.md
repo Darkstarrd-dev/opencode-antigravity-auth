@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.6] - 2026-01-30
+
+### Fixed
+
+- **release workflow** - Update remix package name in README/version automation and release notes
+
 ## [1.4.5] - 2026-01-30
 
 ### Fixed

@@ -13,7 +13,7 @@
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` Tool (Native Implementation + Img2Img)                        | Native Implementation                                                                                     |
 >
-> **Status:** Version 1.4.5 - Aligned endpoint headers and metadata with reference implementation.
+> **Status:** Version 1.4.6 - Aligned endpoint headers and metadata with reference implementation.
 
 ---
 
@@ -70,7 +70,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.5"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.6"]
    }
    ```
 
@@ -121,7 +121,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.5"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.6"],
   "provider": {
     "google": {
       "models": {
@@ -320,7 +320,7 @@ MIT
 > | 双配额系统、多账号轮换、会话恢复、思考过程恢复 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` 工具 (原生实现 + 图生图)                                  | 原生实现                                                                                     |
 >
-> **状态:** 版本 1.4.5 - 对齐了端点请求头和元数据实现。
+> **状态:** 版本 1.4.6 - 对齐了端点请求头和元数据实现。
 
 ---
 
@@ -354,7 +354,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.5"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.6"]
    }
    ```
 
@@ -405,7 +405,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.5"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.6"],
   "provider": {
     "google": {
       "models": {
