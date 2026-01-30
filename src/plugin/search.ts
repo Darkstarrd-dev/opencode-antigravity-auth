@@ -253,12 +253,6 @@ export async function executeSearch(
       },
     ],
     tools,
-    generationConfig: {
-      thinkingConfig: {
-        thinkingLevel: thinking ? "high" : "low",
-        includeThoughts: false,
-      },
-    },
   };
 
   // Wrap in Antigravity format
@@ -267,6 +261,7 @@ export async function executeSearch(
     model: SEARCH_MODEL,
     userAgent: "antigravity",
     requestId: generateRequestId(),
+    requestType: "web_search",
     request: {
       ...requestPayload,
       sessionId: getSessionId(),

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.5] - 2026-01-30
+
+### Fixed
+
+- **google_search tool request compatibility** - Use web_search request type and remove unsupported thinking config
+
 ## [1.3.2] - 2026-01-27
 
 ### Added

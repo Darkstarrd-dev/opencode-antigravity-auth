@@ -13,7 +13,7 @@
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` Tool (Native Implementation + Img2Img)                        | Native Implementation                                                                                     |
 >
-> **Status:** Version 1.4.3 - Aligned endpoint headers and metadata with reference implementation.
+> **Status:** Version 1.4.5 - Aligned endpoint headers and metadata with reference implementation.
 
 ---
 
@@ -29,6 +29,7 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 - **Auto Recovery** - Automatic session recovery from Claude tool_result_missing errors
 - **Plugin Compatible** - Works alongside other OpenCode plugins (opencodesync, etc.)
 - **generate_image Tool** - AI image generation with text-to-image, image-to-image (multi-image fusion), auto-save, and 4K support
+- **google_search Tool** - Built-in web search grounding with a separate tool call (no extra config)
 
 <details open>
 <summary><b>⚠️ Terms of Service Warning — Read Before Installing</b></summary>
@@ -69,7 +70,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.3"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.5"]
    }
    ```
 
@@ -120,7 +121,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.3"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.5"],
   "provider": {
     "google": {
       "models": {
@@ -319,7 +320,7 @@ MIT
 > | 双配额系统、多账号轮换、会话恢复、思考过程恢复 | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` 工具 (原生实现 + 图生图)                                  | 原生实现                                                                                     |
 >
-> **状态:** 版本 1.4.3 - 对齐了端点请求头和元数据实现。
+> **状态:** 版本 1.4.5 - 对齐了端点请求头和元数据实现。
 
 ---
 
@@ -335,6 +336,7 @@ MIT
 - **自动恢复** - 自动处理 Claude 的 `tool_result_missing` 错误并恢复会话
 - **插件兼容性** - 可与其他 OpenCode 插件 (如 opencodesync 等) 同时运行
 - **generate_image 工具** - AI 图像生成，支持文生图、图生图 (多图融合)、自动保存、WebP 转换和 4K 输出
+- **google_search 工具** - 内置联网检索能力，独立工具调用（无需额外配置）
 
 ## 安装步骤
 
@@ -352,7 +354,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.4.3"]
+     "plugin": ["opencode-antigravity-auth-remix@1.4.5"]
    }
    ```
 
@@ -403,7 +405,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.4.3"],
+   "plugin": ["opencode-antigravity-auth-remix@1.4.5"],
   "provider": {
     "google": {
       "models": {
@@ -775,6 +777,10 @@ Most users don't need to configure anything — defaults work well.
 |--------|---------|--------------
 | `keep_thinking` | `false` | Preserve Claude's thinking across turns. **Warning:** enabling may degrade model stability. |
 | `session_recovery` | `true` | Auto-recover from tool errors |
+
+### Google Search Tool
+
+The plugin exposes a `google_search` tool for real-time web search and URL analysis. No extra configuration is required — call the tool when up-to-date information is needed.
 
 ### Account Rotation
 
