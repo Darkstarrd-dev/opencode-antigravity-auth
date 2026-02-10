@@ -1,0 +1,80 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before opening a feature request
+
+        **Please write a descriptive title above** (e.g., "Add support for custom retry strategies")
+
+        Check if this feature has already been requested:
+        - [Existing feature requests](https://github.com/NoeFabris/opencode-antigravity-auth/issues?q=is%3Aissue+label%3Aenhancement)
+        - [Discussions](https://github.com/NoeFabris/opencode-antigravity-auth/discussions)
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues and feature requests for duplicates
+          required: true
+        - label: I have read the [README](https://github.com/NoeFabris/opencode-antigravity-auth#readme)
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature description
+      description: A clear description of the feature you'd like to see.
+      placeholder: Describe the feature...
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: Explain how this feature would be used and what problem it solves.
+      placeholder: |
+        As a user, I want to...
+        So that I can...
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Proposed implementation
+      description: If you have ideas about how this could be implemented, share them here.
+      placeholder: Optional implementation details...
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: Other approaches you've thought about...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: compliance
+    attributes:
+      label: Compliance
+      options:
+        - label: This feature is for personal development use
+          required: true
+        - label: This feature does not violate or circumvent Google's Terms of Service
+          required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add any other context, screenshots, or examples.
+    validations:
+      required: false

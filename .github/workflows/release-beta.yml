@@ -1,0 +1,253 @@
+name: Release Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force publish even if version unchanged'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish-beta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          always-auth: true
+
+      - name: Verify not on main branch
+        run: |
+          set -euo pipefail
+          CURRENT_BRANCH="${GITHUB_REF#refs/heads/}"
+          if [ "$CURRENT_BRANCH" = "main" ]; then
+            echo "ERROR: Beta release workflow should not run on main branch" >&2
+            echo "This workflow is for dev branch only" >&2
+            exit 1
+          fi
+          echo "Running on branch: $CURRENT_BRANCH"
+
+      - name: Determine and bump beta version
+        id: determine
+        run: |
+          set -euo pipefail
+          
+          # Get base version from package.json (strip any existing prerelease suffix)
+          RAW_VERSION=$(node -p "require('./package.json').version")
+          BASE_VERSION=$(echo "$RAW_VERSION" | sed 's/-.*$//')
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          
+          # Fetch all tags
+          git fetch --tags --force
+          
+          # Find the highest beta number for this base version
+          HIGHEST_BETA=-1
+          for tag in $(git tag -l "v${BASE_VERSION}-beta.*"); do
+            # Extract beta number from tag like v1.2.5-beta.3
+            BETA_NUM=$(echo "$tag" | sed "s/v${BASE_VERSION}-beta\\.//")
+            if [[ "$BETA_NUM" =~ ^[0-9]+$ ]] && [ "$BETA_NUM" -gt "$HIGHEST_BETA" ]; then
+              HIGHEST_BETA=$BETA_NUM
+            fi
+          done
+          
+          # Also check npm for published beta versions
+          NPM_BETAS=$(npm view opencode-antigravity-auth versions --json 2>/dev/null | grep -oP "\"${BASE_VERSION}-beta\\.\\K[0-9]+" || echo "")
+          for BETA_NUM in $NPM_BETAS; do
+            if [ "$BETA_NUM" -gt "$HIGHEST_BETA" ]; then
+              HIGHEST_BETA=$BETA_NUM
+            fi
+          done
+          
+          # Increment to next beta
+          NEXT_BETA=$((HIGHEST_BETA + 1))
+          NEXT_VERSION="${BASE_VERSION}-beta.${NEXT_BETA}"
+          echo "next_version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "next_beta=$NEXT_BETA" >> "$GITHUB_OUTPUT"
+          
+          echo "Base version: $BASE_VERSION"
+          echo "Highest existing beta: $HIGHEST_BETA"
+          echo "Next beta version: $NEXT_VERSION"
+
+      - name: Update package.json version
+        id: update_version
+        run: |
+          NEXT_VERSION="${{ steps.determine.outputs.next_version }}"
+          
+          # Update package.json with new beta version
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$NEXT_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n');
+          "
+          
+          echo "Updated package.json to version $NEXT_VERSION"
+          
+          # Commit the version bump
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to $NEXT_VERSION [skip ci]" || echo "No changes to commit"
+          git push origin dev || echo "Push failed or no changes"
+
+      - name: Check if should publish
+        id: should_publish
+        run: |
+          # Always publish since we auto-increment
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          echo "Will publish version ${{ steps.determine.outputs.next_version }}"
+
+      - name: Verify NPM token
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "NPM_TOKEN secret is required" >&2
+            exit 1
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: npm install
+
+      - name: Run type check
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: npm run typecheck
+
+      - name: Run tests
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: npm run build
+
+      - name: Verify build artifacts
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: |
+          set -euo pipefail
+          [ -f dist/index.js ] || { echo "dist/index.js missing" >&2; exit 1; }
+          [ -f dist/index.d.ts ] || { echo "dist/index.d.ts missing" >&2; exit 1; }
+          [ -d dist/src ] || { echo "dist/src/ missing" >&2; exit 1; }
+
+      - name: Create git tag
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: |
+          NEXT_VERSION="${{ steps.determine.outputs.next_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v$NEXT_VERSION"
+          git push origin "v$NEXT_VERSION"
+
+      - name: Generate release notes
+        if: steps.should_publish.outputs.should_publish == 'true'
+        id: release_notes
+        run: |
+          set -euo pipefail
+          NEXT_VERSION="${{ steps.determine.outputs.next_version }}"
+          BASE_VERSION="${{ steps.determine.outputs.base_version }}"
+          
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "${LAST_TAG}..HEAD" | grep -v "\[skip ci\]" || echo "")
+            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${NEXT_VERSION}"
+          else
+            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' -20 | grep -v "\[skip ci\]" || echo "")
+            COMPARE_URL=""
+          fi
+          
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- Beta release ${NEXT_VERSION}"
+          fi
+          
+          BODY_FILE=$(mktemp)
+          {
+            echo "## Beta Release v${NEXT_VERSION}"
+            echo ""
+            echo "⚠️ **This is a beta release for testing. Use at your own risk.**"
+            echo ""
+            echo "Base version: \`${BASE_VERSION}\`"
+            echo ""
+            if [ -n "$COMPARE_URL" ]; then
+              echo "Compare changes: $COMPARE_URL"
+              echo ""
+            fi
+            printf "%s\n" "$CHANGELOG"
+            echo ""
+            echo "### Install Beta"
+            echo ""
+            echo "Update your \`opencode.json\`:"
+            echo ""
+            printf '%s\n' '```json'
+            printf '%s\n' '{'
+            printf '%s\n' "  \"plugin\": [\"opencode-antigravity-auth@${NEXT_VERSION}\"]"
+            printf '%s\n' '}'
+            printf '%s\n' '```'
+            echo ""
+            echo "Or use the beta tag (always latest beta):"
+            echo ""
+            printf '%s\n' '```json'
+            printf '%s\n' '{'
+            printf '%s\n' '  "plugin": ["opencode-antigravity-auth@beta"]'
+            printf '%s\n' '}'
+            printf '%s\n' '```'
+            echo ""
+            echo "Clear cache if stuck on old version:"
+            echo ""
+            printf '%s\n' '```bash'
+            printf '%s\n' 'rm -rf ~/.cache/opencode/node_modules ~/.cache/opencode/bun.lock'
+            printf '%s\n' '```'
+          } >"$BODY_FILE"
+          
+          {
+            echo "body<<EOF"
+            cat "$BODY_FILE"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Create GitHub pre-release
+        if: steps.should_publish.outputs.should_publish == 'true'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.determine.outputs.next_version }}
+          release_name: v${{ steps.determine.outputs.next_version }} (Beta)
+          body: ${{ steps.release_notes.outputs.body }}
+          prerelease: true
+          draft: false
+
+      - name: Publish to npm with beta tag
+        if: steps.should_publish.outputs.should_publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --tag beta --provenance
+
+      - name: Summary
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: |
+          echo "## Beta Release Published! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.determine.outputs.next_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** ${{ steps.determine.outputs.base_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Install:**" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '{ "plugin": ["opencode-antigravity-auth@beta"] }' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

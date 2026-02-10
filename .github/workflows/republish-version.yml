@@ -1,0 +1,209 @@
+name: Republish Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to republish (e.g., 1.2.5)'
+        required: true
+        type: string
+      skip_unpublish:
+        description: 'Skip unpublish step (if version does not exist on npm)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  republish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          always-auth: true
+
+      - name: Verify version matches package.json
+        run: |
+          set -euo pipefail
+          REQUESTED_VERSION="${{ github.event.inputs.version }}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$REQUESTED_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "ERROR: Requested version ($REQUESTED_VERSION) does not match package.json ($PACKAGE_VERSION)" >&2
+            echo "Please update package.json to the version you want to publish" >&2
+            exit 1
+          fi
+
+          echo "Version verified: $PACKAGE_VERSION"
+
+      - name: Unpublish existing version
+        if: github.event.inputs.skip_unpublish != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+
+          echo "Checking if version $VERSION exists on npm..."
+          if npm view opencode-antigravity-auth@$VERSION version >/dev/null 2>&1; then
+            echo "Version $VERSION exists, unpublishing..."
+            npm unpublish opencode-antigravity-auth@$VERSION --force
+            echo "Successfully unpublished version $VERSION"
+          else
+            echo "Version $VERSION does not exist on npm, skipping unpublish"
+          fi
+
+      - name: Delete existing git tag
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          TAG="v$VERSION"
+
+          echo "Checking if tag $TAG exists..."
+          if git tag -l "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG exists locally, deleting..."
+            git tag -d "$TAG" || true
+          fi
+
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
+            echo "Tag $TAG exists remotely, deleting..."
+            git push origin :refs/tags/$TAG || true
+          fi
+
+          echo "Git tag cleanup complete"
+
+      - name: Verify NPM token
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "NPM_TOKEN secret is required" >&2
+            exit 1
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          set -euo pipefail
+          [ -f dist/index.js ] || { echo "dist/index.js missing" >&2; exit 1; }
+          [ -f dist/index.d.ts ] || { echo "dist/index.d.ts missing" >&2; exit 1; }
+          [ -d dist/src ] || { echo "dist/src/ missing" >&2; exit 1; }
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+
+          echo "Publishing version $VERSION to npm..."
+          npm publish --access public --provenance
+
+          echo "Successfully published version $VERSION"
+          echo ""
+          echo "Updating @latest tag..."
+          npm dist-tag add opencode-antigravity-auth@$VERSION latest
+
+          echo ""
+          echo "Current dist-tags:"
+          npm dist-tag ls opencode-antigravity-auth
+
+      - name: Create git tag
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "${LAST_TAG}..HEAD" | grep -v "\[skip ci\]" || echo "")
+            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${VERSION}"
+          else
+            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' -20 | grep -v "\[skip ci\]" || echo "")
+            COMPARE_URL=""
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- Release v${VERSION}"
+          fi
+
+          BODY_FILE=$(mktemp)
+          {
+            echo "## Release v${VERSION}"
+            echo ""
+            if [ -n "$COMPARE_URL" ]; then
+              echo "Compare changes: $COMPARE_URL"
+              echo ""
+            fi
+            printf "%s\n" "$CHANGELOG"
+            echo ""
+            echo "### Install"
+            echo ""
+            echo "Update your \`opencode.json\`:"
+            echo ""
+            printf '%s\n' '```json'
+            printf '%s\n' '{'
+            printf '%s\n' "  \"plugins\": [\"opencode-antigravity-auth@${VERSION}\"]"
+            printf '%s\n' '}'
+            printf '%s\n' '```'
+          } >"$BODY_FILE"
+
+          {
+            echo "body<<EOF"
+            cat "$BODY_FILE"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          release_name: v${{ github.event.inputs.version }}
+          body: ${{ steps.release_notes.outputs.body }}
+          draft: false
+          prerelease: false
+
+      - name: Summary
+        run: |
+          echo "## Version Republished! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Install:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "npm install opencode-antigravity-auth@${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "# or" >> $GITHUB_STEP_SUMMARY
+          echo "npm install opencode-antigravity-auth@latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

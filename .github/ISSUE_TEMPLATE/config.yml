@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting Guide
+    url: https://github.com/NoeFabris/opencode-antigravity-auth#troubleshoot
+    about: Check the troubleshooting section first - most issues are covered here
+  - name: Search Existing Issues
+    url: https://github.com/NoeFabris/opencode-antigravity-auth/issues?q=is%3Aissue
+    about: Your issue may have already been reported or resolved
+  - name: Discussions
+    url: https://github.com/NoeFabris/opencode-antigravity-auth/discussions
+    about: Ask questions or discuss the plugin with the community
+  - name: Google Cloud Support
+    url: https://cloud.google.com/support
+    about: For Google Cloud account or billing issues, contact Google Cloud directly
