@@ -13,7 +13,7 @@
 > | Dual Quota System, Multi-Account Rotation, Session Recovery, Thinking Recovery | [NoeFabris/opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)             |
 > | `generate_image` Tool (Native Implementation + Img2Img)                        | Native Implementation                                                                                     |
 >
-> **Status:** Version 1.5.0 - Aligned endpoint headers and metadata with reference implementation.
+> **Status:** Version 1.5.1 - Aligned endpoint headers and metadata with reference implementation.
 
 ---
 
@@ -71,7 +71,7 @@ Install the opencode-antigravity-auth-remix plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.5.0"]
+     "plugin": ["opencode-antigravity-auth-remix@1.5.1"]
    }
    ```
 
@@ -122,7 +122,7 @@ Copy this to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.5.0"],
+   "plugin": ["opencode-antigravity-auth-remix@1.5.1"],
   "provider": {
     "google": {
       "models": {
