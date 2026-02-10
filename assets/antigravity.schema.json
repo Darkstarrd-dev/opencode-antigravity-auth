@@ -131,6 +131,11 @@
       "default": false,
       "type": "boolean"
     },
+    "cli_first": {
+      "default": false,
+      "type": "boolean",
+      "description": "Prefer gemini-cli routing before Antigravity for Gemini models. Env: OPENCODE_ANTIGRAVITY_CLI_FIRST=1"
+    },
     "account_selection_strategy": {
       "default": "hybrid",
       "type": "string",
