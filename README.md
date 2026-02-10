@@ -358,7 +358,7 @@ MIT
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth-remix@1.5.0"]
+     "plugin": ["opencode-antigravity-auth-remix@1.5.1"]
    }
    ```
 
@@ -409,7 +409,7 @@ MIT
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-   "plugin": ["opencode-antigravity-auth-remix@1.5.0"],
+   "plugin": ["opencode-antigravity-auth-remix@1.5.1"],
   "provider": {
     "google": {
       "models": {
