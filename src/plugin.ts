@@ -4,8 +4,8 @@ import {
   ANTIGRAVITY_DEFAULT_PROJECT_ID,
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_ENDPOINT_PROD,
-  ANTIGRAVITY_HEADERS,
   ANTIGRAVITY_PROVIDER_ID,
+  getAntigravityHeaders,
   type HeaderStyle,
 } from "./constants";
 import { authorizeAntigravity, exchangeAntigravity } from "./antigravity/oauth";
@@ -49,6 +49,7 @@ import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
 import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
+import { initAntigravityVersion } from "./plugin/version";
 import { executeSearch } from "./plugin/search";
 import { executeImageGeneration } from "./plugin/image";
 import type {
@@ -483,7 +484,7 @@ async function verifyAccountAccess(
     ANTIGRAVITY_DEFAULT_PROJECT_ID;
 
   const headers: Record<string, string> = {
-    ...ANTIGRAVITY_HEADERS,
+    ...getAntigravityHeaders(),
     Authorization: `Bearer ${refreshedAuth.access}`,
     "Content-Type": "application/json",
   };
@@ -847,7 +848,7 @@ async function persistAccountPool(
     : (typeof stored?.activeIndex === "number" && Number.isFinite(stored.activeIndex) ? stored.activeIndex : 0);
 
   await saveAccounts({
-    version: 3,
+    version: 4,
     accounts,
     activeIndex: clampInt(activeIndex, 0, accounts.length - 1),
     activeIndexByFamily: {
@@ -1225,6 +1226,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
   
   // Initialize structured logger for TUI integration
   initLogger(client);
+  
+  // Fetch latest Antigravity version from remote API (non-blocking, falls back to hardcoded)
+  await initAntigravityVersion();
   
   // Initialize health tracker for hybrid strategy
   if (config.health_score) {
@@ -3105,7 +3109,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 );
                 // Use saveAccountsReplace to bypass merge (otherwise deleted account gets merged back)
                 await saveAccountsReplace({
-                  version: 3,
+                  version: 4,
                   accounts: updatedAccounts,
                   activeIndex: 0,
                   activeIndexByFamily: { claude: 0, gemini: 0 },
@@ -3151,11 +3155,8 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   instructions: "All accounts deleted. Run `opencode auth login` to reauthenticate.",
                   method: "auto",
                   callback: async () => ({
-                    type: "success",
-                    refresh: "",
-                    access: "",
-                    expires: 0,
-                    projectId: "",
+                    type: "failed",
+                    error: "All accounts deleted. Reauthentication required.",
                   }),
                 };
               }
@@ -3321,7 +3322,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         lastUsed: Date.now(),
                       };
                       await saveAccounts({
-                        version: 3,
+                        version: 4,
                         accounts: updatedAccounts,
                         activeIndex: currentStorage.activeIndex,
                         activeIndexByFamily: currentStorage.activeIndexByFamily,
